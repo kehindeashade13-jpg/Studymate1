@@ -99,6 +99,7 @@ export interface Flashcard {
   materialId: string;
   front: string;
   back: string;
+  explanation?: string;
   hint: string;
   difficulty: "easy" | "medium" | "hard";
   category: string;
@@ -117,7 +118,9 @@ export interface Mnemonic {
 export interface FillInTheBlank {
   sentence: string;
   answer: string;
+  options?: string[];
   hint: string;
+  explanation?: string;
 }
 
 export interface RecallQuestion {
@@ -173,6 +176,15 @@ export interface QuizAttempt {
   weakTopics: string[];
 }
 
+export interface LessonQuestion {
+  question: string;
+  options: string[];
+  correctIndex: number;
+  hint: string;
+  reinforcement: string;
+  struggleExplanation: string;
+}
+
 export interface LessonStep {
   lessonNumber: number;
   title: string;
@@ -180,14 +192,8 @@ export interface LessonStep {
   content: string;
   analogy: string;
   keyTerms: string[];
-  knowledgeCheck: {
-    question: string;
-    options: string[];
-    correctIndex: number;
-    hint: string;
-    reinforcement: string;
-    struggleExplanation: string;
-  };
+  knowledgeCheck: LessonQuestion;
+  questions?: LessonQuestion[];
   completed?: boolean;
 }
 

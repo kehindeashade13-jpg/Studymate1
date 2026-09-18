@@ -19,6 +19,7 @@ import {
   RepetitionRating,
   SourceType,
 } from "../types";
+import { cleanTitle } from "../utils/studyTransformer";
 import {
   initialUser,
   initialMaterials,
@@ -192,7 +193,13 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         localStorage.removeItem("studymate_materials");
         return [];
       }
-      return saved ? JSON.parse(saved) : initialMaterials;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((m: StudyMaterial) => ({ ...m, title: cleanTitle(m.title) }));
+        }
+      }
+      return initialMaterials;
     } catch {
       return initialMaterials;
     }
@@ -448,8 +455,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addMaterial = (material: StudyMaterial) => {
-    setMaterials((prev) => [material, ...prev]);
-    setActiveMaterial(material);
+    const cleaned = { ...material, title: cleanTitle(material.title) };
+    setMaterials((prev) => [cleaned, ...prev]);
+    setActiveMaterial(cleaned);
     addXP(50, "Material Imported");
 
     // Add notification
@@ -458,7 +466,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         id: `notif-${Date.now()}`,
         type: "system",
         title: "Material Ready",
-        message: `"${material.title}" has been structured into notes, flashcards, lessons, and quizzes!`,
+        message: `"${cleaned.title}" has been structured into notes, flashcards, lessons, and quizzes!`,
         timestamp: "Just now",
         isRead: false,
       },

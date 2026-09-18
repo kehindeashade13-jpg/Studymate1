@@ -44,11 +44,10 @@ function cleanJsonResponse(raw: string): any {
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
 const CANDIDATE_MODELS = [
-  "gemini-3.5-flash",
-  "gemini-3.5-flash-lite",
-  "gemini-flash-lite-latest",
   "gemini-3.1-flash-lite",
-  "gemini-3.6-flash",
+  "gemini-flash-latest",
+  "gemini-3.8-flash",
+  "gemini-2.5-flash",
 ];
 
 async function generateContentWithRetry(
@@ -67,11 +66,15 @@ async function generateContentWithRetry(
 
   for (const model of modelsToTry) {
     try {
-      const response = await ai.models.generateContent({
+      const callPromise = ai.models.generateContent({
         model,
         contents: params.contents,
         config: params.config,
       });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 12000)
+      );
+      const response = await Promise.race([callPromise, timeoutPromise]);
       return response;
     } catch (err: any) {
       lastError = err;
@@ -80,7 +83,7 @@ async function generateContentWithRetry(
         `[Gemini API] Model ${model} encountered ${status || err?.message}. Failing over to next available model...`
       );
       // Brief pause before trying next candidate
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }
   throw lastError || new Error("All candidate Gemini models failed");
@@ -707,13 +710,24 @@ app.post("/api/gemini/generate-flashcards", async (req, res) => {
   if (ai && content) {
     try {
       const prompt = `You are StudyMate AI, an expert in cognitive science and spaced repetition memory techniques.
-Create a dedicated Memorise pack from the study material below.
-Include:
-1. Flashcards (front question, back answer, hint, difficulty)
-2. Mnemonics (creative acronyms or association phrases for tricky lists)
-3. Memory associations
-4. Fill-in-the-blank recall exercises
-5. Rapid recall questions
+Create a dedicated Memorise pack pulled directly from the uploaded study material below.
+Requirements:
+1. "flashcards": Exactly 15 flashcards. Each MUST include:
+   - "id": unique string
+   - "front": clear prompt or question testing a fact, term, or relationship from the material
+   - "back": concise, accurate direct answer
+   - "explanation": a detailed explanation of the question asked, explaining the underlying mechanism and why this is the correct answer
+   - "hint": a helpful clue
+   - "difficulty": "easy" | "medium" | "hard"
+   - "category": topic category name
+2. "mnemonics": Exactly 10 (or more) AI mnemonics (creative acronyms, mental hooks, or associative memory pegs).
+3. "fillInTheBlanks": Exactly 15 objective questions with options. Each MUST include:
+   - "sentence": statement with "_______" representing the blank
+   - "answer": the exact missing word/phrase
+   - "options": an array of 4 objective multiple-choice choices (including the correct answer)
+   - "hint": clue
+   - "explanation": detailed explanation of why the answer fits
+4. "recallQuestions": 2-3 deep recall questions with ideal answers.
 
 Topic: ${title}
 Material:
@@ -721,13 +735,14 @@ Material:
 ${content.slice(0, 12000)}
 """
 
-Return ONLY a JSON object:
+Return ONLY a JSON object matching this schema:
 {
   "flashcards": [
     {
       "id": string,
       "front": string,
       "back": string,
+      "explanation": string,
       "hint": string,
       "difficulty": "easy" | "medium" | "hard",
       "category": string
@@ -744,7 +759,9 @@ Return ONLY a JSON object:
     {
       "sentence": string,
       "answer": string,
-      "hint": string
+      "options": string[],
+      "hint": string,
+      "explanation": string
     }
   ],
   "recallQuestions": [
@@ -771,90 +788,319 @@ Return ONLY a JSON object:
     }
   }
 
+  // 15 flashcards fallback with rich explanations
+  const fallbackFlashcards = [
+    {
+      id: "fc-1",
+      front: `What is the core operational definition of ${title || "this topic"}?`,
+      back: "The foundational framework describing how system components interact, transform inputs, and maintain balance.",
+      explanation: `Detailed Explanation:\nThis question tests your baseline conceptual grasp of ${title || "the subject"}. In academic study, understanding the foundational definition acts as the primary mental scaffold before moving into mathematical formulations or complex procedural workflows.`,
+      hint: "Focus on systemic interaction and conservation.",
+      difficulty: "easy",
+      category: "Definitions",
+    },
+    {
+      id: "fc-2",
+      front: "What is the key difference between static equilibrium and dynamic steady state?",
+      back: "In static equilibrium, all microscopic and macroscopic processes halt. In dynamic steady state, forward and reverse processes continue at identical rates.",
+      explanation: "Detailed Explanation:\nStatic equilibrium involves no ongoing energy or mass throughput (dead halt). Dynamic steady state requires active, ongoing flux of reactants/signals that continuously balance each other out.",
+      hint: "Think about whether motion or reactions are active.",
+      difficulty: "medium",
+      category: "Core Concepts",
+    },
+    {
+      id: "fc-3",
+      front: "What constitutes the primary rate-limiting factor in this system?",
+      back: "The specific sub-process with the highest activation energy or the component with the lowest availability threshold.",
+      explanation: "Detailed Explanation:\nMuch like the narrowest neck in an hourglass, the overall velocity or yield of the entire system is strictly throttled by its slowest, highest-resistance step.",
+      hint: "Think of the narrowest point in a bottleneck.",
+      difficulty: "hard",
+      category: "Mechanisms",
+    },
+    {
+      id: "fc-4",
+      front: "How does an increase in system temperature typically influence kinetic throughput?",
+      back: "It elevates average molecular kinetic energy, increasing the fraction of particles that surpass the activation barrier.",
+      explanation: "Detailed Explanation:\nAccording to the Arrhenius relationship and Maxwell-Boltzmann distribution, thermal energy increases collision frequency and collision efficacy, accelerating reaction speed.",
+      hint: "Recall Maxwell-Boltzmann distribution curves.",
+      difficulty: "medium",
+      category: "Thermodynamics",
+    },
+    {
+      id: "fc-5",
+      front: "What mathematical identity describes the conservation of inputs and outputs?",
+      back: "∑ Inputs = ∑ Outputs + Accumulation. Under steady state, Accumulation = 0.",
+      explanation: "Detailed Explanation:\nThe first law of conservation dictates that matter and energy cannot be created or destroyed. In an open steady-state system, rate in must precisely equal rate out.",
+      hint: "Nothing is created or destroyed without accounting for storage.",
+      difficulty: "easy",
+      category: "Formulas",
+    },
+    {
+      id: "fc-6",
+      front: "What role does negative feedback regulation play?",
+      back: "It counteracts deviations from the target set point, preventing runaway escalation and restoring homeostatic equilibrium.",
+      explanation: "Detailed Explanation:\nNegative feedback loops sense output levels and throttle upstream inputs when the target threshold is exceeded, maintaining operational stability.",
+      hint: "Think of a household thermostat.",
+      difficulty: "easy",
+      category: "Regulatory Control",
+    },
+    {
+      id: "fc-7",
+      front: "How does a catalyst affect activation energy without shifting equilibrium?",
+      back: "It provides an alternative reaction pathway with a lower activation energy, accelerating both forward and reverse rates equally.",
+      explanation: "Detailed Explanation:\nCatalysts do not alter thermodynamic free energy (ΔG) or the final equilibrium constant (K); they simply lower the energetic hurdle to reach equilibrium faster.",
+      hint: "Lowers the mountain pass without changing start or finish elevation.",
+      difficulty: "medium",
+      category: "Kinetics",
+    },
+    {
+      id: "fc-8",
+      front: "What is thermodynamic entropy and what does the second law dictate?",
+      back: "Entropy measures the dispersion of energy and molecular disorder; total entropy in an isolated system must always increase.",
+      explanation: "Detailed Explanation:\nThe second law of thermodynamics establishes the irreversible arrow of time, dictating that natural spontaneous processes move toward maximum energetic dispersion.",
+      hint: "Second law direction of disorder.",
+      difficulty: "hard",
+      category: "Thermodynamics",
+    },
+    {
+      id: "fc-9",
+      front: "Why is empirical validation required in scientific modeling?",
+      back: "To confirm that theoretical hypotheses match reproducible physical observations under controlled experimental conditions.",
+      explanation: "Detailed Explanation:\nA theory may be mathematically elegant, but without empirical testing against physical data, it cannot be validated as natural law.",
+      hint: "Think about reproducible laboratory trials.",
+      difficulty: "easy",
+      category: "Scientific Methodology",
+    },
+    {
+      id: "fc-10",
+      front: "What is a perturbation response in systems theory?",
+      back: "The compensatory adjustment a system undergoes when an external force displaces it from equilibrium.",
+      explanation: "Detailed Explanation:\nPer Le Chatelier's principle and general systems theory, when an external stress is applied, the system shifts its state to oppose the stress.",
+      hint: "Opposing external displacement.",
+      difficulty: "medium",
+      category: "System Dynamics",
+    },
+    {
+      id: "fc-11",
+      front: "What is the danger of confusing correlation with causation?",
+      back: "Assuming one variable causes another when an unobserved confounding factor may actually drive both.",
+      explanation: "Detailed Explanation:\nTwo variables may rise together due to coincidental timing or a third hidden factor. Establishing causation requires rigorous experimental control.",
+      hint: "Confounding third variables.",
+      difficulty: "medium",
+      category: "Analytical Reasoning",
+    },
+    {
+      id: "fc-12",
+      front: "What is an activation threshold in physical or biological processes?",
+      back: "The minimum energetic or signaling stimulus required before an observable transformation can begin.",
+      explanation: "Detailed Explanation:\nSub-threshold inputs result in passive decay with zero state transition. Once the threshold is breached, the process proceeds spontaneously or all-or-none.",
+      hint: "The minimum hurdle to initiate action.",
+      difficulty: "easy",
+      category: "Mechanisms",
+    },
+    {
+      id: "fc-13",
+      front: "How do boundary conditions constrain mathematical models?",
+      back: "They define the spatial, temperature, or pressure domain within which governing equations remain valid.",
+      explanation: "Detailed Explanation:\nFormulas like ideal gas laws or linear kinetics fail when boundary conditions (such as extreme pressure or low temperature) are breached.",
+      hint: "The physical limits of formula applicability.",
+      difficulty: "hard",
+      category: "Modeling",
+    },
+    {
+      id: "fc-14",
+      front: "What is meant by systemic homogeneity?",
+      back: "A uniform spatial distribution of chemical species, temperature, or properties throughout a phase.",
+      explanation: "Detailed Explanation:\nHomogeneous systems have identical properties at every microscopic coordinate, eliminating localized diffusion gradients.",
+      hint: "Uniformity across the entire mixture.",
+      difficulty: "medium",
+      category: "Foundations",
+    },
+    {
+      id: "fc-15",
+      front: "Why does active recall outperform passive rereading during exam preparation?",
+      back: "Retrieval practice strengthens neural synaptic connections and diagnoses gaps in mental models far more effectively.",
+      explanation: "Detailed Explanation:\nCognitive testing shows that the effort of retrieving knowledge from memory reorganizes and cements long-term storage, whereas rereading creates a false illusion of competence.",
+      hint: "The testing effect in cognitive science.",
+      difficulty: "easy",
+      category: "Learning Strategy",
+    },
+  ];
+
+  // 10 AI Mnemonics fallback
+  const fallbackMnemonics = [
+    {
+      concept: "5-Step Systematic Problem Solving",
+      phrase: "G - U - E - S - S",
+      explanation: "Given, Unknown, Equation, Substitute, Solve — ensures you never miss a step in quantitative exam questions.",
+    },
+    {
+      concept: "Mastering Core Characteristics",
+      phrase: "O - R - D - E - R",
+      explanation: "Observe, Relate, Define, Evaluate, Review — rapid recall checklist for complex essay topics.",
+    },
+    {
+      concept: "Homeostatic Regulatory Feedback Loop",
+      phrase: "S - R - C - E - F",
+      explanation: "Stimulus, Receptor, Control center, Effector, Feedback — the universal sequence of dynamic self-regulation.",
+    },
+    {
+      concept: "Thermodynamic State Variables",
+      phrase: "P - V - T - N",
+      explanation: "Pressure, Volume, Temperature, Moles — universal state variables defining gas and system equilibria.",
+    },
+    {
+      concept: "Active Recall Study Cycle",
+      phrase: "P - T - E - R",
+      explanation: "Prime, Test, Explain, Retain — cognitive learning loop preventing passive rereading traps.",
+    },
+    {
+      concept: "System Stability Constraints",
+      phrase: "B - O - U - N - D",
+      explanation: "Boundary, Output, Unity, Normalcy, Deviation — checklist for verifying model limits.",
+    },
+    {
+      concept: "Scientific Mechanism Breakdown",
+      phrase: "I - T - R",
+      explanation: "Initialization, Transition, Resolution — 3-act structure for breaking down complex pathways.",
+    },
+    {
+      concept: "Critical Thinking & Causal Analysis",
+      phrase: "C - A - U - S - E",
+      explanation: "Correlation vs causation, Assumptions, Underlying factors, Sample size, Experimental controls.",
+    },
+    {
+      concept: "Exam Question Deconstruction",
+      phrase: "F - A - S - T",
+      explanation: "Find the question prompt, Ask what is given, Select the theorem, Test the boundary sanity.",
+    },
+    {
+      concept: "Memory Anchor for Core Concepts",
+      phrase: "D - E - P - T - H",
+      explanation: "Define the term, Explain mechanism, Provide example, Test edge cases, Harmonize with overarching theory.",
+    },
+  ];
+
+  // 15 Objective Fill-in-the-Blanks with Options
+  const fallbackFillInTheBlanks = [
+    {
+      sentence: "In any isolated thermodynamic system, total entropy must _______ over time.",
+      answer: "increase",
+      options: ["increase", "decrease", "remain zero", "fluctuate randomly"],
+      hint: "Second law of thermodynamics direction.",
+      explanation: "According to the Second Law, spontaneous processes in isolated domains always increase total entropy.",
+    },
+    {
+      sentence: "A catalyst accelerates a reaction by lowering the required _______ energy.",
+      answer: "activation",
+      options: ["activation", "kinetic", "nuclear", "gravitational"],
+      hint: "The energy hump needed to initiate transformation.",
+      explanation: "Catalysts provide a lower activation energy pathway without altering the overall thermodynamic equilibrium.",
+    },
+    {
+      sentence: "When net external forces equal zero, the system maintains a constant _______.",
+      answer: "momentum",
+      options: ["momentum", "temperature", "acceleration", "friction"],
+      hint: "Mass times velocity property.",
+      explanation: "Newton's first law and conservation of momentum dictate that closed systems retain constant velocity.",
+    },
+    {
+      sentence: "A state where opposing physical or chemical processes occur at identical rates is called _______.",
+      answer: "dynamic equilibrium",
+      options: ["dynamic equilibrium", "static arrest", "exponential expansion", "turbulent decay"],
+      hint: "Balanced ongoing transformations.",
+      explanation: "Dynamic equilibrium features continuous microscopic transformations with balanced macroscopic constancy.",
+    },
+    {
+      sentence: "The component or sub-process that limits maximum velocity or overall throughput is the _______.",
+      answer: "limiting factor",
+      options: ["limiting factor", "catalytic agent", "excess reactant", "inert spectator"],
+      hint: "The bottleneck of the system.",
+      explanation: "The rate-limiting factor acts as the bottleneck dictating overall system capacity.",
+    },
+    {
+      sentence: "Negative feedback regulation serves primarily to _______ deviations and restore target set points.",
+      answer: "counteract",
+      options: ["counteract", "amplify", "eliminate", "accelerate"],
+      hint: "Restoring homeostatic stability.",
+      explanation: "Negative feedback reduces deviations from the normal range to preserve system stability.",
+    },
+    {
+      sentence: "Unlike closed static equilibrium, an open _______ state requires continuous circulation of energy and matter.",
+      answer: "steady",
+      options: ["steady", "inert", "isolated", "chaotic"],
+      hint: "Open system maintaining constant internal conditions.",
+      explanation: "A steady state maintains constant internal properties through continuous throughput.",
+    },
+    {
+      sentence: "The minimum stimulus or energetic input required to initiate an action or transformation is the _______.",
+      answer: "activation threshold",
+      options: ["activation threshold", "equilibrium constant", "dissipation factor", "inertial mass"],
+      hint: "The barrier that must be surmounted.",
+      explanation: "Sub-threshold inputs cannot trigger the forward cascade; the threshold must be breached.",
+    },
+    {
+      sentence: "Scientific validity requires that theoretical models undergo rigorous _______ validation.",
+      answer: "empirical",
+      options: ["empirical", "arbitrary", "fictional", "spontaneous"],
+      hint: "Grounded in experimental observation.",
+      explanation: "Empirical proof relies on measurable, reproducible sensory and experimental data.",
+    },
+    {
+      sentence: "When boundary constraints are exceeded, idealized scientific models experience _______.",
+      answer: "breakdown",
+      options: ["breakdown", "infinite acceleration", "absolute perfection", "zero resistance"],
+      hint: "The failure of standard assumptions.",
+      explanation: "Extreme pressure, temperature, or scale violates simplifying model assumptions.",
+    },
+    {
+      sentence: "Molecules or signals naturally diffuse down their concentration _______ toward equilibrium.",
+      answer: "gradient",
+      options: ["gradient", "resistance", "inertia", "impedance"],
+      hint: "High to low concentration slope.",
+      explanation: "Net passive transport moves from areas of higher chemical potential to lower chemical potential.",
+    },
+    {
+      sentence: "In any closed domain, total mass and energy adhere to the fundamental _______ law.",
+      answer: "conservation",
+      options: ["conservation", "dissolution", "combustion", "entropy"],
+      hint: "Cannot be created or destroyed.",
+      explanation: "Conservation laws state that total mass-energy remains strictly invariant.",
+    },
+    {
+      sentence: "Le Chatelier's principle states that a system in equilibrium will respond to a _______ by counteracting it.",
+      answer: "perturbation",
+      options: ["perturbation", "constant", "vacuum", "solution"],
+      hint: "An external stress or displacement.",
+      explanation: "Systems adjust internal equilibria to oppose applied external stresses.",
+    },
+    {
+      sentence: "Mistaking a co-occurring variable for an operative cause is an error of conflating correlation with _______.",
+      answer: "causation",
+      options: ["causation", "calculation", "calibration", "continuation"],
+      hint: "Direct causal relationship.",
+      explanation: "Correlation shows statistical association; causation requires mechanistic proof.",
+    },
+    {
+      sentence: "Self-testing via _______ recall reorganizes neural networks and strengthens retrieval fluency.",
+      answer: "active",
+      options: ["active", "passive", "subconscious", "delayed"],
+      hint: "Effortful retrieval practice.",
+      explanation: "Active recall forces the brain to retrieve information, building durable synaptic memory pathways.",
+    },
+  ];
+
   return res.json({
     success: true,
     data: {
-      flashcards: [
-        {
-          id: "fc-1",
-          front: `What is the core definition of ${title || "this topic"}?`,
-          back: `The fundamental framework describing how components interact, transform energetic inputs, and preserve systemic balance under variable conditions.`,
-          hint: "Focus on systemic interaction and conservation.",
-          difficulty: "easy",
-          category: "Definitions",
-        },
-        {
-          id: "fc-2",
-          front: "What is the key difference between static equilibrium and dynamic steady state?",
-          back: "In static equilibrium, no processes are occurring. In dynamic steady state, forward and reverse processes continue at identical rates so net properties remain constant.",
-          hint: "Think about whether motion or reaction is active.",
-          difficulty: "medium",
-          category: "Core Concepts",
-        },
-        {
-          id: "fc-3",
-          front: "What constitutes the primary rate-limiting factor in this system?",
-          back: "The specific sub-process with the highest activation energy or the component with the lowest availability threshold.",
-          hint: "Think of the narrowest point in a bottleneck.",
-          difficulty: "hard",
-          category: "Mechanisms",
-        },
-        {
-          id: "fc-4",
-          front: "How does an increase in system temperature typically influence kinetic throughput?",
-          back: "It increases average kinetic energy, elevating the fraction of particles exceeding activation energy and accelerating reaction frequency.",
-          hint: "Recall Maxwell-Boltzmann distribution curves.",
-          difficulty: "medium",
-          category: "Thermodynamics",
-        },
-        {
-          id: "fc-5",
-          front: "What mathematical identity describes the conservation of inputs and outputs?",
-          back: "∑ Inputs = ∑ Outputs + Accumulation (or Δ Storage). Under steady state, Accumulation = 0.",
-          hint: "Nothing is created or destroyed without accounting for storage.",
-          difficulty: "easy",
-          category: "Formulas",
-        },
-      ],
-      mnemonics: [
-        {
-          concept: "5-Step Systematic Problem Solving",
-          phrase: "G.U.E.S.S.",
-          explanation: "Given, Unknown, Equation, Substitute, Solve — ensures you never miss a step in quantitative exam questions.",
-        },
-        {
-          concept: "Mastering Core Characteristics",
-          phrase: "O.R.D.E.R.",
-          explanation: "Observe, Relate, Define, Evaluate, Review — rapid recall checklist for complex essay topics.",
-        },
-      ],
-      fillInTheBlanks: [
-        {
-          sentence: "In any isolated thermodynamic system, total entropy must _______ over time.",
-          answer: "increase",
-          hint: "Second law of thermodynamics direction.",
-        },
-        {
-          sentence: "A catalyst accelerates a reaction by lowering the required _______ energy.",
-          answer: "activation",
-          hint: "The energy hump needed to initiate transformation.",
-        },
-        {
-          sentence: "When net external forces equal zero, the system maintains a constant _______.",
-          answer: "momentum",
-          hint: "Mass times velocity property.",
-        },
-      ],
+      flashcards: fallbackFlashcards,
+      mnemonics: fallbackMnemonics,
+      fillInTheBlanks: fallbackFillInTheBlanks,
       recallQuestions: [
         {
           question: "Without checking your notes, state the 3 essential conditions required for equilibrium.",
-          idealAnswer: "1. Closed system, 2. Constant macroscopic properties (temperature, pressure), 3. Equal forward and reverse rates.",
+          idealAnswer: "1. Closed system, 2. Constant macroscopic properties, 3. Equal forward and reverse rates.",
           keyTerms: ["closed system", "constant properties", "equal rates"],
-        },
-        {
-          question: "Explain the biological or physical consequence if negative feedback regulation fails.",
-          idealAnswer: "The system undergoes runaway deviation, leading to metabolic crisis, mechanical failure, or irreversible instability.",
-          keyTerms: ["runaway deviation", "instability", "failure"],
         },
       ],
     },
@@ -1004,6 +1250,11 @@ Lesson 4: Examples (worked scenario with clear breakdown)
 Lesson 5: Practice (guided thinking, hands-on puzzle)
 Lesson 6: Knowledge check (confirm deep understanding)
 
+CRITICAL INSTRUCTION:
+Under EACH lesson give exactly 5 questions to answer (e.g. Lesson 1 has 5 questions, Lesson 2 has 5 questions, etc.) in the "questions" array.
+Each question must be a multiple-choice question with 4 options, the correctIndex (0-3), a helpful hint, reinforcement explanation for getting it right, and struggleExplanation for guidance if incorrect.
+Also set "knowledgeCheck" to the first question in the "questions" array.
+
 Subject: ${title}
 Material:
 """
@@ -1029,7 +1280,17 @@ Return ONLY a JSON object:
         "hint": string,
         "reinforcement": string,
         "struggleExplanation": string
-      }
+      },
+      "questions": [
+        {
+          "question": string,
+          "options": string[],
+          "correctIndex": number,
+          "hint": string,
+          "reinforcement": string,
+          "struggleExplanation": string
+        }
+      ]
     }
   ]
 }`;
@@ -1049,135 +1310,142 @@ Return ONLY a JSON object:
     }
   }
 
-  // Fallback 6-step progressive lesson
+  // Helper to generate 5 questions for any lesson in fallback
+  const get5LessonQuestions = (lessonNum: number, topic: string) => [
+    {
+      question: `[Lesson ${lessonNum} - Question 1] What is the primary focus of ${topic}?`,
+      options: [
+        "Anticipating system behavior and mastering core relationships",
+        "Memorizing isolated terms without context",
+        "Eliminating empirical experimentation completely",
+        "Assuming laws change randomly without causes",
+      ],
+      correctIndex: 0,
+      hint: "Focus on understanding causes and relationships.",
+      reinforcement: "Spot on! Grasping core principles allows you to solve novel exam scenarios.",
+      struggleExplanation: "Remember: foundational understanding prevents being tricked by phrasing variations.",
+    },
+    {
+      question: `[Lesson ${lessonNum} - Question 2] How do interacting components maintain systemic stability?`,
+      options: [
+        "Through feedback loops and regulatory thresholds",
+        "By halting all microscopic processes permanently",
+        "By allowing unbounded exponential deviation",
+        "Components operate with zero connection to each other",
+      ],
+      correctIndex: 0,
+      hint: "Think about negative feedback and homeostatic set points.",
+      reinforcement: "Correct! Feedback mechanisms throttle inputs to maintain equilibrium.",
+      struggleExplanation: "Without feedback control, systems experience runaway accumulation or collapse.",
+    },
+    {
+      question: `[Lesson ${lessonNum} - Question 3] What happens when a primary limiting factor or bottleneck is encountered?`,
+      options: [
+        "Overall throughput is capped by the slowest, highest-resistance step",
+        "System speed multiplies to infinity instantaneously",
+        "All energy conservation requirements disappear",
+        "The reaction runs backward without any energy input",
+      ],
+      correctIndex: 0,
+      hint: "Think of an hourglass or a single-lane bridge.",
+      reinforcement: "Spot on! The bottleneck dictates the maximum attainable rate.",
+      struggleExplanation: "Just like highway traffic merging into one lane, the slowest step dictates overall capacity.",
+    },
+    {
+      question: `[Lesson ${lessonNum} - Question 4] What is the most effective approach to solving exam problems on this topic?`,
+      options: [
+        "Verify assumptions and identify known boundary constraints first",
+        "Start writing equations before reading the question parameters",
+        "Assume idealized conditions always apply without verification",
+        "Guess numbers that look aesthetically pleasing",
+      ],
+      correctIndex: 0,
+      hint: "Check given constraints before starting calculations.",
+      reinforcement: "Superb! Methodical preparation prevents simple misinterpretation errors.",
+      struggleExplanation: "Establishing constraints first prevents calculating with invalid assumptions.",
+    },
+    {
+      question: `[Lesson ${lessonNum} - Question 5] Which revision strategy yields the strongest long-term retention?`,
+      options: [
+        "Active recall self-testing paired with intuitive analogies",
+        "Passive rereading of highlighted textbooks",
+        "Cramming the morning of the exam without testing yourself",
+        "Relying solely on intuition without practicing problems",
+      ],
+      correctIndex: 0,
+      hint: "Retrieval practice strengthens neural connections.",
+      reinforcement: "Bravo! Active retrieval cements durable memory pathways for exam day.",
+      struggleExplanation: "Cognitive science shows active self-testing produces 3x better recall than passive reading.",
+    },
+  ];
+
+  // Fallback 6-step progressive lesson with 5 questions under each lesson
+  const rawLessons = [
+    {
+      lessonNumber: 1,
+      title: "Introduction & The Big Picture",
+      subtitle: "Why this matters and what problems it solves",
+      content: `Welcome to your progressive mastery path for ${title || "this subject"}! Before diving into complex formulas, let's step back: what problem does this concept solve in our world? At its heart, it allows scientists and thinkers to predict, control, and optimize how energy and matter transform without guessing. Review the key concepts and answer the 5 lesson questions below.`,
+      analogy: "Think of this like learning the blueprint of a skyscraper before pouring concrete — understanding the structural skeleton prevents future collapse.",
+      keyTerms: ["Foundations", "Purpose", "Framework"],
+    },
+    {
+      lessonNumber: 2,
+      title: "Basic Concepts & Vocabulary",
+      subtitle: "Speaking the exact language of the discipline",
+      content: `Now that we know the purpose, let's examine the essential building blocks. Every concept has nouns (entities), verbs (mechanisms), and rules (conservation laws). When examining ${title || "the subject"}, identify what flows, what resists the flow, and what stores the potential. Complete the 5 check questions below.`,
+      analogy: "Like learning musical notes before playing a symphony: notes are simple, but their combinations create immense depth.",
+      keyTerms: ["Substrate", "Equilibrium", "Rate Limiter"],
+    },
+    {
+      lessonNumber: 3,
+      title: "Understanding the Process",
+      subtitle: "Step-by-step mechanism and flow of causality",
+      content: `Here we trace the mechanism chronologically: \n1. Initial Activation: A trigger input breaches the threshold energy barrier.\n2. Cascade & Propagation: Molecules or components interact according to governing gradients.\n3. Termination & Homeostasis: The system stabilizes once the driving gradient equalizes. Test your understanding with the 5 questions below.`,
+      analogy: "Imagine rolling a boulder over a small hill (activation) so it can roll down the great valley (spontaneous release).",
+      keyTerms: ["Activation Energy", "Gradient", "Steady State"],
+    },
+    {
+      lessonNumber: 4,
+      title: "Worked Examples & Scenarios",
+      subtitle: "Applying the theory to real experimental cases",
+      content: `Let's work through a concrete case: Suppose an experiment doubles input concentration [A] while holding temperature constant. Using our governing rate relationship R = k[A]^2, we observe that the rate quadruples (2^2 = 4). Notice how non-linear relationships produce rapid scaling! Work through the 5 practice questions below.`,
+      analogy: "Like car braking distances: doubling speed quadruples braking distance because energy scales with the square of velocity.",
+      keyTerms: ["Scaling", "Proportionality", "Non-linear"],
+    },
+    {
+      lessonNumber: 5,
+      title: "Guided Practice & Edge Cases",
+      subtitle: "Handling test traps and boundary conditions",
+      content: `Exam writers love stress conditions: what happens when temperature is cooled to near absolute zero? Or when pressure exceeds structural containment? Under extreme conditions, idealized assumptions break down, requiring real-world correction terms. Answer the 5 questions below to cement edge case mastery.`,
+      analogy: "An airplane flies predictably in smooth air, but pilots practice stall recoveries for turbulent edge conditions.",
+      keyTerms: ["Assumptions", "Deviations", "Real-World Effects"],
+    },
+    {
+      lessonNumber: 6,
+      title: "Knowledge Check & Final Mastery",
+      subtitle: "Confirming you can teach this to others",
+      content: `Congratulations on reaching Lesson 6! You've traversed from the big-picture purpose through the microscopic mechanisms, mathematical scaling, and boundary edge cases. The ultimate test of mastery is the Feynman Technique: can you explain this simply to someone with zero background? Finish strong with these 5 final questions!`,
+      analogy: "You have built the entire structure from bedrock to roof. You are now equipped for any exam question.",
+      keyTerms: ["Synthesis", "Mastery", "Feynman Technique"],
+    },
+  ];
+
+  const fullLessons = rawLessons.map((l) => {
+    const qs = get5LessonQuestions(l.lessonNumber, l.title);
+    return {
+      ...l,
+      knowledgeCheck: qs[0],
+      questions: qs,
+    };
+  });
+
   return res.json({
     success: true,
     data: {
       subject: title || "Mastery Pathway",
-      totalLessons: 6,
-      lessons: [
-        {
-          lessonNumber: 1,
-          title: "Introduction & The Big Picture",
-          subtitle: "Why this matters and what problems it solves",
-          content: `Welcome to your progressive mastery path for ${title || "this subject"}! Before diving into complex formulas, let's step back: what problem does this concept solve in our world? At its heart, it allows scientists and thinkers to predict, control, and optimize how energy and matter transform without guessing.`,
-          analogy: "Think of this like learning the blueprint of a skyscraper before pouring concrete — understanding the structural skeleton prevents future collapse.",
-          keyTerms: ["Foundations", "Purpose", "Framework"],
-          knowledgeCheck: {
-            question: "What is the primary goal of establishing a conceptual framework first?",
-            options: [
-              "To memorize equations without understanding context",
-              "To anticipate system behavior and understand underlying causes",
-              "To make tests deliberately more challenging",
-              "To eliminate all need for empirical testing",
-            ],
-            correctIndex: 1,
-            hint: "Focus on understanding causes rather than brute memorization.",
-            reinforcement: "Spot on! Grasping causes gives you the ability to solve unfamiliar problems on exams.",
-            struggleExplanation: "Remember: memorization alone fails when exams twist the question. The framework provides the 'why' behind the 'what'.",
-          },
-        },
-        {
-          lessonNumber: 2,
-          title: "Basic Concepts & Vocabulary",
-          subtitle: "Speaking the exact language of the discipline",
-          content: `Now that we know the purpose, let's examine the essential building blocks. Every concept has nouns (entities), verbs (mechanisms), and rules (conservation laws). When examining ${title || "the subject"}, identify what flows, what resists the flow, and what stores the potential.`,
-          analogy: "Like learning musical notes before playing a symphony: notes are simple, but their combinations create immense depth.",
-          keyTerms: ["Substrate", "Equilibrium", "Rate Limiter"],
-          knowledgeCheck: {
-            question: "In standard scientific modeling, what does a 'rate-limiting step' refer to?",
-            options: [
-              "The quickest action in a sequence",
-              "The slowest sub-process that caps overall speed",
-              "A step that produces no measurable output",
-              "An optional bonus phase",
-            ],
-            correctIndex: 1,
-            hint: "Think about highway traffic where 3 lanes merge into 1.",
-            reinforcement: "Excellent! The slowest step dictates the throughput of the entire chain.",
-            struggleExplanation: "Think of an hourglass: no matter how wide the glass bulbs are, the narrow neck limits how fast sand falls. That narrow neck is the rate limiter.",
-          },
-        },
-        {
-          lessonNumber: 3,
-          title: "Understanding the Process",
-          subtitle: "Step-by-step mechanism and flow of causality",
-          content: `Here we trace the mechanism chronologically: \n1. Initial Activation: A trigger input breaches the threshold energy barrier.\n2. Cascade & Propagation: Molecules or components interact according to governing gradients.\n3. Termination & Homeostasis: The system stabilizes once the driving gradient equalizes.`,
-          analogy: "Imagine rolling a boulder over a small hill (activation) so it can roll down the great valley (spontaneous release).",
-          keyTerms: ["Activation Energy", "Gradient", "Steady State"],
-          knowledgeCheck: {
-            question: "What happens if the initial input energy is below the activation threshold?",
-            options: [
-              "The process runs at double speed",
-              "The process will not proceed spontaneously",
-              "The system turns into heat instantly",
-              "The laws of physics reverse",
-            ],
-            correctIndex: 1,
-            hint: "If you don't strike a match hard enough, does it light?",
-            reinforcement: "Spot on! The threshold must be surmounted for the reaction to initiate.",
-            struggleExplanation: "Just like rolling a ball uphill: if you don't push it all the way to the crest, it simply rolls back down to the start.",
-          },
-        },
-        {
-          lessonNumber: 4,
-          title: "Worked Examples & Scenarios",
-          subtitle: "Applying the theory to real experimental cases",
-          content: `Let's work through a concrete case: Suppose an experiment doubles input concentration [A] while holding temperature constant. Using our governing rate relationship R = k[A]^2, we observe that the rate quadruples (2^2 = 4). Notice how non-linear relationships produce rapid scaling!`,
-          analogy: "Like car braking distances: doubling speed quadruples braking distance because energy scales with the square of velocity.",
-          keyTerms: ["Scaling", "Proportionality", "Non-linear"],
-          knowledgeCheck: {
-            question: "If a rate law is second-order with respect to [A], tripling [A] multiplies the rate by:",
-            options: ["3x", "6x", "9x", "27x"],
-            correctIndex: 2,
-            hint: "Calculate 3 squared (3^2).",
-            reinforcement: "Mathematical brilliance! 3 squared equals 9 times faster.",
-            struggleExplanation: "In second-order dependencies, multiply the factor by itself: 3 × 3 = 9. If it were first-order, it would only be 3x.",
-          },
-        },
-        {
-          lessonNumber: 5,
-          title: "Guided Practice & Edge Cases",
-          subtitle: "Handling test traps and boundary conditions",
-          content: `Exam writers love stress conditions: what happens when temperature is cooled to near absolute zero? Or when pressure exceeds structural containment? Under extreme conditions, idealized assumptions break down, requiring real-world correction terms.`,
-          analogy: "An airplane flies predictably in smooth air, but pilots practice stall recoveries for turbulent edge conditions.",
-          keyTerms: ["Assumptions", "Deviations", "Real-World Effects"],
-          knowledgeCheck: {
-            question: "Why do ideal models often fail at extremely high pressures?",
-            options: [
-              "Particle volume and intermolecular forces can no longer be ignored",
-              "Molecules cease to possess mass",
-              "Pressure converts all matter into photons",
-              "Gravity is cancelled out",
-            ],
-            correctIndex: 0,
-            hint: "When packed closely together, particles take up physical space.",
-            reinforcement: "Magnificent! Crowded particles push against each other, violating the zero-volume ideal assumption.",
-            struggleExplanation: "In an empty room, people can run around freely without bumping into walls. In a packed subway car, personal volume matters!",
-          },
-        },
-        {
-          lessonNumber: 6,
-          title: "Knowledge Check & Final Mastery",
-          subtitle: "Confirming you can teach this to others",
-          content: `Congratulations on reaching Lesson 6! You've traversed from the big-picture purpose through the microscopic mechanisms, mathematical scaling, and boundary edge cases. The ultimate test of mastery is the Feynman Technique: can you explain this simply to someone with zero background?`,
-          analogy: "You have built the entire structure from bedrock to roof. You are now equipped for any exam question.",
-          keyTerms: ["Synthesis", "Mastery", "Feynman Technique"],
-          knowledgeCheck: {
-            question: "Which habit best ensures long-term retention of this material?",
-            options: [
-              "Re-reading the textbook passively the night before the test",
-              "Spaced active recall and testing yourself on weak areas",
-              "Highlighting every paragraph with different colors",
-              "Assuming that reading once is sufficient",
-            ],
-            correctIndex: 1,
-            hint: "Think about how muscles grow through resistance training.",
-            reinforcement: "Bravo! Active recall strengthens neural pathways for effortless recall under exam pressure.",
-            struggleExplanation: "Science proves that testing yourself (active retrieval) forces your brain to build durable memory connections far superior to re-reading.",
-          },
-        },
-      ],
+      totalLessons: fullLessons.length,
+      lessons: fullLessons,
     },
   });
 });

@@ -22,6 +22,7 @@ import {
 import { useStudy, ActiveTab } from "../context/StudyContext";
 import { StudySubject, SourceType, StudyMaterial } from "../types";
 import { ProcessingScreen } from "./ProcessingScreen";
+import { generateFallbackStudyPackage, safeFetchJson, cleanTitle } from "../utils/studyTransformer";
 
 export const AddMaterialModal: React.FC = () => {
   const {
@@ -42,6 +43,7 @@ export const AddMaterialModal: React.FC = () => {
   const [title, setTitle] = useState(initialImportQuery || "");
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (isAddMaterialModalOpen) {
@@ -76,8 +78,11 @@ export const AddMaterialModal: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const fileName = file.name;
+    setUploadedFileName(fileName);
+
     if (!title) {
-      setTitle(file.name.replace(/\.[^/.]+$/, ""));
+      setTitle(cleanTitle(fileName.replace(/\.[^/.]+$/, "")));
     }
 
     if (file.type.startsWith("image/")) {
@@ -85,19 +90,15 @@ export const AddMaterialModal: React.FC = () => {
       reader.onload = (event) => {
         setImagePreview(event.target?.result as string);
         setContent(
-          `# Scanned Document: ${file.name}\n\n[Study material image loaded for optical OCR extraction. Visual diagrams, formulas, and textbook excerpts prepared for AI analysis.]`
+          `# Scanned Document: ${fileName}\n\n[Study material image loaded for optical OCR extraction. Visual diagrams, formulas, and textbook excerpts prepared for AI analysis.]`
         );
-        // Pop up asking what exactly they want: Note -> Memorise -> Step-by-step lesson
-        setIsGoalPromptOpen(true);
       };
       reader.readAsDataURL(file);
     } else {
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
-        setContent(text || `Uploaded study file: ${file.name}`);
-        // Pop up asking what exactly they want: Note -> Memorise -> Step-by-step lesson
-        setIsGoalPromptOpen(true);
+        setContent(text || `Uploaded study file: ${fileName}`);
       };
       reader.readAsText(file);
     }
@@ -151,7 +152,7 @@ export const AddMaterialModal: React.FC = () => {
   const handleSubmit = async (overrideGoal?: "note" | "memorise" | "lesson") => {
     const finalGoal = overrideGoal || selectedGoal;
     setSelectedGoal(finalGoal);
-    const finalTitle = title.trim() || `${subject} Study Material`;
+    const finalTitle = cleanTitle(title.trim() || uploadedFileName?.replace(/\.[^/.]+$/, "") || "Study Material");
     let rawContent = content.trim();
 
     if (activeImportType === "youtube" && youtubeUrl) {
@@ -171,87 +172,113 @@ export const AddMaterialModal: React.FC = () => {
         if (prev < 4) return prev + 1;
         return prev;
       });
-    }, 600);
+    }, 500);
+
+    const newMaterialId = `mat-${Date.now()}`;
+    
+    // Guaranteed fallback package ready instantly
+    const fallbackPkg = generateFallbackStudyPackage(
+      newMaterialId,
+      finalTitle,
+      rawContent,
+      subject,
+      activeImportType,
+      youtubeUrl || undefined,
+      imagePreview || undefined
+    );
+
+    let resolvedMaterial = fallbackPkg.material;
+    let resolvedNotes = fallbackPkg.notes;
+    let resolvedFlashcards = fallbackPkg.flashcards;
+    let resolvedQuiz = fallbackPkg.quiz;
+    let resolvedLesson = fallbackPkg.lesson;
 
     try {
-      // Call backend /api/gemini/analyze
-      const analyzeRes = await fetch("/api/gemini/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      // 1. Fetch material analysis with a 9s safety timeout
+      const analyzeData = await safeFetchJson<any>(
+        "/api/gemini/analyze",
+        {
           title: finalTitle,
           content: rawContent,
           sourceType: activeImportType,
-        }),
-      });
-      const analyzeData = await analyzeRes.json();
-      const resData = analyzeData.data || {};
+        },
+        9000
+      );
 
-      // Also generate Notes, Flashcards, Quiz, Lesson in parallel
+      if (analyzeData) {
+        resolvedMaterial = {
+          ...resolvedMaterial,
+          summary: analyzeData.summary || resolvedMaterial.summary,
+          mainTopics: analyzeData.mainTopics?.length ? analyzeData.mainTopics : resolvedMaterial.mainTopics,
+          subtopics: analyzeData.subtopics?.length ? analyzeData.subtopics : resolvedMaterial.subtopics,
+          keyConcepts: analyzeData.keyConcepts?.length ? analyzeData.keyConcepts : resolvedMaterial.keyConcepts,
+          definitions: analyzeData.definitions?.length ? analyzeData.definitions : resolvedMaterial.definitions,
+          importantFacts: analyzeData.importantFacts?.length ? analyzeData.importantFacts : resolvedMaterial.importantFacts,
+          relationships: analyzeData.relationships?.length ? analyzeData.relationships : resolvedMaterial.relationships,
+          examples: analyzeData.examples?.length ? analyzeData.examples : resolvedMaterial.examples,
+          formulas: analyzeData.formulas?.length ? analyzeData.formulas : resolvedMaterial.formulas,
+          importantDates: analyzeData.importantDates?.length ? analyzeData.importantDates : resolvedMaterial.importantDates,
+          potentialExamQuestions: analyzeData.potentialExamQuestions?.length ? analyzeData.potentialExamQuestions : resolvedMaterial.potentialExamQuestions,
+          chunks: analyzeData.chunks?.length ? analyzeData.chunks : resolvedMaterial.chunks,
+        };
+      }
+
+      // 2. Fetch specialized study assets in parallel with 9s safety timeout
       const [notesRes, flashcardsRes, quizRes, lessonRes] = await Promise.all([
-        fetch("/api/gemini/generate-notes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, content: rawContent }),
-        }).then((r) => r.json()).catch(() => ({})),
-
-        fetch("/api/gemini/generate-flashcards", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, content: rawContent }),
-        }).then((r) => r.json()).catch(() => ({})),
-
-        fetch("/api/gemini/generate-quiz", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, content: rawContent, questionCount: 5 }),
-        }).then((r) => r.json()).catch(() => ({})),
-
-        fetch("/api/gemini/generate-lesson", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: finalTitle, content: rawContent }),
-        }).then((r) => r.json()).catch(() => ({})),
+        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 9000),
+        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 9000),
+        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 5 }, 9000),
+        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 9000),
       ]);
 
-      const newMaterialId = `mat-${Date.now()}`;
-      const newMaterial: StudyMaterial = {
-        id: newMaterialId,
-        title: finalTitle,
-        subject,
-        sourceType: activeImportType,
-        sourceUrl: youtubeUrl || undefined,
-        fileUrl: imagePreview || undefined,
-        rawText: rawContent,
-        summary: resData.summary || `Comprehensive study material for ${finalTitle}.`,
-        dateAdded: new Date().toISOString(),
-        mainTopics: resData.mainTopics || ["Foundations", "Mechanisms", "Applications"],
-        subtopics: resData.subtopics || ["Key definitions", "Process steps"],
-        keyConcepts: resData.keyConcepts || [],
-        definitions: resData.definitions || [],
-        importantFacts: resData.importantFacts || [],
-        relationships: resData.relationships || [],
-        examples: resData.examples || [],
-        formulas: resData.formulas || [],
-        importantDates: resData.importantDates || [],
-        potentialExamQuestions: resData.potentialExamQuestions || [],
-        chunks: resData.chunks || [],
-        progressPercent: 0,
-      };
+      if (notesRes) {
+        resolvedNotes = {
+          ...resolvedNotes,
+          ...notesRes,
+          id: `notes-${newMaterialId}`,
+          materialId: newMaterialId,
+        };
+      }
 
-      // Save to state
-      addMaterial(newMaterial);
-      if (notesRes.data) saveGeneratedNotes(newMaterialId, notesRes.data);
-      if (flashcardsRes.data) saveGeneratedMemorise(newMaterialId, flashcardsRes.data);
-      if (quizRes.data) saveGeneratedQuiz(newMaterialId, quizRes.data);
-      if (lessonRes.data) saveGeneratedLesson(newMaterialId, lessonRes.data);
+      if (flashcardsRes?.flashcards) {
+        resolvedFlashcards = {
+          ...resolvedFlashcards,
+          ...flashcardsRes,
+          materialId: newMaterialId,
+        };
+      }
 
-      clearInterval(stageInterval);
-      setProcessingStage(5);
-      setCreatedMaterial(newMaterial);
+      if (quizRes?.questions) {
+        resolvedQuiz = {
+          ...resolvedQuiz,
+          ...quizRes,
+          id: `quiz-${newMaterialId}`,
+          materialId: newMaterialId,
+        };
+      }
+
+      if (lessonRes?.lessons || lessonRes?.steps) {
+        resolvedLesson = {
+          ...resolvedLesson,
+          ...lessonRes,
+          lessons: lessonRes.lessons || lessonRes.steps,
+          id: `lesson-${newMaterialId}`,
+          materialId: newMaterialId,
+        };
+      }
     } catch (err) {
+      console.warn("Using local study transformation fallback:", err);
+    } finally {
+      // Guaranteed save under all conditions (inside AI Studio, live links, and offline)
+      addMaterial(resolvedMaterial);
+      saveGeneratedNotes(newMaterialId, resolvedNotes);
+      saveGeneratedMemorise(newMaterialId, resolvedFlashcards);
+      saveGeneratedQuiz(newMaterialId, resolvedQuiz);
+      saveGeneratedLesson(newMaterialId, resolvedLesson);
+
       clearInterval(stageInterval);
       setProcessingStage(5);
+      setCreatedMaterial(resolvedMaterial);
     }
   };
 
@@ -416,42 +443,18 @@ export const AddMaterialModal: React.FC = () => {
           </div>
 
           <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6">
-            {/* Subject & Title inputs */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
-                  Material Title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Cellular Respiration & Citric Acid Cycle"
-                  className="w-full px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
-                  Subject / Course
-                </label>
-                <select
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value as StudySubject)}
-                  className="w-full px-3.5 py-2 rounded-lg bg-white border border-slate-300 text-sm text-[#0A1931] font-semibold focus:outline-none focus:border-[#0A1931] transition cursor-pointer"
-                >
-                  <option value="Biology">Biology</option>
-                  <option value="Mathematics">Mathematics</option>
-                  <option value="Chemistry">Chemistry</option>
-                  <option value="Physics">Physics</option>
-                  <option value="History">History</option>
-                  <option value="Computer Science">Computer Science</option>
-                  <option value="English">English</option>
-                  <option value="Business">Business</option>
-                  <option value="Psychology">Psychology</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+            {/* Title input */}
+            <div>
+              <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
+                Material Title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., Cellular Respiration & Citric Acid Cycle"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
+              />
             </div>
 
             {/* Source Type Cards */}
@@ -517,17 +520,27 @@ export const AddMaterialModal: React.FC = () => {
                     />
                   </div>
 
-                  {content && (
-                    <div className="mt-3">
-                      <label className="block text-xs font-bold text-[#0A1931] mb-1">
-                        Loaded Material Content (Editable Preview)
-                      </label>
-                      <textarea
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        rows={4}
-                        className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931] font-mono"
-                      />
+                  {uploadedFileName && (
+                    <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[#0A1931]">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
+                          <Check className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-[#0A1931]">{uploadedFileName}</p>
+                          <p className="text-[11px] text-emerald-700">File loaded and ready for upload</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUploadedFileName(null);
+                          setContent("");
+                        }}
+                        className="text-xs font-semibold text-slate-500 hover:text-red-600 cursor-pointer"
+                      >
+                        Remove
+                      </button>
                     </div>
                   )}
                 </div>
@@ -769,11 +782,11 @@ export const AddMaterialModal: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setIsGoalPromptOpen(true)}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                onClick={() => handleSubmit()}
+                className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-xs font-bold shadow-xs transition cursor-pointer"
               >
-                <Sparkles className="w-4 h-4 text-white" />
-                <span>Upload & Transform with AI</span>
+                <Upload className="w-4 h-4 text-white" />
+                <span>Upload</span>
               </button>
             </div>
           </div>

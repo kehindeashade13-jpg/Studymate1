@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { SourceType, StudyMaterial } from "../types";
+import { cleanTitle, cleanToNaturalEnglish } from "../utils/studyTransformer";
 
 export const DashboardView: React.FC = () => {
   const {
@@ -440,7 +441,7 @@ export const DashboardView: React.FC = () => {
                       onClick={() => handleOpenMaterialMode(mat, "learn")}
                       className="font-extrabold text-base text-[#0A1931] hover:text-blue-700 transition cursor-pointer leading-snug line-clamp-1"
                     >
-                      {mat.title}
+                      {cleanTitle(mat.title)}
                     </h3>
                     <p className="text-xs text-[#1B2A4A]/80 mt-1 line-clamp-2 leading-relaxed">
                       {mat.summary || "Interactive study deck with key terms, quizzes, and structured notes."}
@@ -870,7 +871,7 @@ export const DashboardView: React.FC = () => {
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-extrabold text-sm sm:text-base text-[#0A1931] truncate">
-                    {previewingMaterial.title}
+                    {cleanTitle(previewingMaterial.title)}
                   </h3>
                   <div className="flex items-center gap-2 text-[11px] text-[#1B2A4A]/70">
                     <span>{previewingMaterial.subject}</span>
@@ -912,12 +913,12 @@ export const DashboardView: React.FC = () => {
                     <span>AI Analysis Summary</span>
                   </div>
                   <p className="text-xs text-[#0A1931] leading-relaxed">
-                    {previewingMaterial.summary}
+                    {cleanToNaturalEnglish(previewingMaterial.summary)}
                   </p>
                 </div>
               )}
 
-              {/* Extracted Raw Content Preview */}
+              {/* Extracted Raw Content Preview written in pure English */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[#0A1931]">
@@ -925,8 +926,9 @@ export const DashboardView: React.FC = () => {
                   </span>
                   <button
                     onClick={() => {
-                      if (previewingMaterial.rawText && navigator?.clipboard?.writeText) {
-                        navigator.clipboard.writeText(previewingMaterial.rawText);
+                      const textToCopy = cleanToNaturalEnglish(previewingMaterial.rawText);
+                      if (textToCopy && navigator?.clipboard?.writeText) {
+                        navigator.clipboard.writeText(textToCopy);
                         setCopiedPreviewText(true);
                         setTimeout(() => setCopiedPreviewText(false), 2000);
                       }
@@ -946,8 +948,8 @@ export const DashboardView: React.FC = () => {
                     )}
                   </button>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                  {previewingMaterial.rawText || "No raw text available."}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans text-slate-800 max-h-56 overflow-y-auto whitespace-pre-line leading-relaxed space-y-2">
+                  {cleanToNaturalEnglish(previewingMaterial.rawText)}
                 </div>
               </div>
             </div>
