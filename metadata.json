@@ -1,0 +1,11 @@
+{
+  "name": "Remix StudyMate1",
+  "description": "AI-powered student learning and study platform that turns study materials into understanding through notes, flashcards, interactive step-by-step lessons, quizzes, and collaborative study groups.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
