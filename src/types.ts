@@ -242,6 +242,8 @@ export interface GroupMember {
   role: "admin" | "member";
   isOnline: boolean;
   studyStreak: number;
+  phoneNumber?: string;
+  institution?: string;
 }
 
 export interface GroupMessage {
@@ -286,6 +288,8 @@ export interface StudyFriend {
   goals: string;
   mutualSubjectsCount: number;
   status: "connected" | "pending" | "none";
+  phoneNumber?: string;
+  email?: string;
 }
 
 export interface NotificationItem {

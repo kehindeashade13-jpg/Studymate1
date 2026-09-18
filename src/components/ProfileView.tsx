@@ -6,10 +6,11 @@ import {
 } from "lucide-react";
 
 export const ProfileView: React.FC = () => {
-  const { user, updateUser, triggerConfetti } = useStudy();
+  const { user, updateUser, triggerConfetti, setIsProfileSetupOpen } = useStudy();
 
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email || "student@studymate.ai");
   const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || "+1 (555) 438-9201");
   const [institution, setInstitution] = useState(user.institution || "Stanford University");
   const [educationLevel, setEducationLevel] = useState(user.educationLevel);
@@ -21,6 +22,7 @@ export const ProfileView: React.FC = () => {
     e.preventDefault();
     updateUser({
       name,
+      email,
       phoneNumber,
       institution,
       educationLevel,
@@ -62,13 +64,22 @@ export const ProfileView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => setIsEditing(!isEditing)}
-          className="px-4 py-2 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-xs font-semibold text-white transition flex items-center gap-2 self-start sm:self-center cursor-pointer shadow-xs"
-        >
-          <Edit3 className="w-3.5 h-3.5 text-white" />
-          <span>{isEditing ? "Cancel Editing" : "Edit Profile"}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setIsProfileSetupOpen(true)}
+            className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-bold text-[#0A1931] transition flex items-center gap-2 cursor-pointer shadow-xs"
+          >
+            <Phone className="w-3.5 h-3.5 text-[#0A1931]" />
+            <span>Open Profile Front</span>
+          </button>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="px-4 py-2 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-xs font-semibold text-white transition flex items-center gap-2 self-start sm:self-center cursor-pointer shadow-xs"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-white" />
+            <span>{isEditing ? "Cancel Editing" : "Edit Profile"}</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Profile Form / Display */}
@@ -84,6 +95,19 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#0A1931] mb-1">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
                   required
                 />

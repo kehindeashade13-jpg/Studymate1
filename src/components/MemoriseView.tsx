@@ -475,9 +475,6 @@ export const MemoriseView: React.FC = () => {
           {/* Spaced Repetition Rating Buttons or Action Bar */}
           {isFlipped ? (
             <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center animate-in fade-in">
-              <p className="text-xs font-semibold text-slate-300 mb-3">
-                How well did you recall this answer?
-              </p>
               <div className="grid grid-cols-4 gap-2 sm:gap-3">
                 <button
                   onClick={() => handleRating("again")}

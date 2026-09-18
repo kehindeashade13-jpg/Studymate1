@@ -16,8 +16,11 @@ import {
   Check,
   UserPlus,
   ArrowRight,
+  Trash2,
+  UserMinus,
 } from "lucide-react";
-import { StudySubject } from "../types";
+import { StudySubject, GroupMember } from "../types";
+import { searchPeersByPhone } from "../data/registeredPeers";
 
 export const GroupsView: React.FC = () => {
   const {
@@ -26,6 +29,8 @@ export const GroupsView: React.FC = () => {
     setActiveGroup,
     createStudyGroup,
     addMemberToGroup,
+    removeMemberFromGroup,
+    friends,
     groupMessages,
     sendGroupMessage,
     reactToMessage,
@@ -46,6 +51,8 @@ export const GroupsView: React.FC = () => {
   const [newGroupDesc, setNewGroupDesc] = useState("");
   const [newGroupExam, setNewGroupExam] = useState("Finals 2026");
   const [newGroupIsPrivate, setNewGroupIsPrivate] = useState(false);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [customPhoneInvite, setCustomPhoneInvite] = useState("");
 
   // Find friend with phone number state
   const [showFindFriends, setShowFindFriends] = useState(false);
@@ -56,6 +63,7 @@ export const GroupsView: React.FC = () => {
     name: string;
     phone: string;
     avatar: string;
+    school?: string;
     isExisting: boolean;
   } | null>(null);
   const [isSearchingPhone, setIsSearchingPhone] = useState(false);
@@ -76,6 +84,51 @@ export const GroupsView: React.FC = () => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
 
+    const initialMembers: GroupMember[] = [
+      {
+        id: user.id,
+        name: `${user.name} (Admin)`,
+        avatar: user.avatar,
+        role: "admin",
+        isOnline: true,
+        studyStreak: user.streakDays || 0,
+        phoneNumber: user.phoneNumber,
+        institution: user.institution,
+      },
+    ];
+
+    // Add selected friends from network
+    selectedFriendIds.forEach((fId) => {
+      const fr = friends.find((f) => f.id === fId);
+      if (fr) {
+        initialMembers.push({
+          id: fr.id,
+          name: fr.name,
+          avatar: fr.avatar || "/studymate_logo.jpg",
+          role: "member",
+          isOnline: true,
+          studyStreak: 4,
+          phoneNumber: fr.phoneNumber || "+1 (555) 234-5678",
+          institution: fr.school,
+        });
+      }
+    });
+
+    // If custom phone was entered, also add them
+    if (customPhoneInvite.trim()) {
+      const matched = searchPeersByPhone(customPhoneInvite.trim())[0];
+      initialMembers.push({
+        id: `phone-invite-${Date.now()}`,
+        name: matched ? matched.name : "Invited Peer",
+        avatar: matched ? matched.avatar : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+        role: "member",
+        isOnline: true,
+        studyStreak: matched ? matched.studyStreak : 3,
+        phoneNumber: matched ? matched.phoneNumber : customPhoneInvite.trim(),
+        institution: matched ? matched.school : "StudyMate Peer",
+      });
+    }
+
     createStudyGroup({
       name: newGroupName.trim(),
       subject: newGroupSubject,
@@ -83,11 +136,14 @@ export const GroupsView: React.FC = () => {
       examDate: newGroupExam.trim(),
       isPrivate: newGroupIsPrivate,
       sharedMaterialIds: materials.length > 0 ? [materials[0].id] : [],
+      members: initialMembers,
     });
 
     setIsCreateModalOpen(false);
     setNewGroupName("");
     setNewGroupDesc("");
+    setSelectedFriendIds([]);
+    setCustomPhoneInvite("");
     triggerConfetti();
   };
 
@@ -96,36 +152,50 @@ export const GroupsView: React.FC = () => {
     if (!phoneNumber.trim()) return;
 
     setIsSearchingPhone(true);
-    // Simulate finding a friend with the phone number
     setTimeout(() => {
       setIsSearchingPhone(false);
-      const cleanPhone = `${phoneCountryCode} ${phoneNumber.trim()}`;
-      setSearchResult({
-        name: "Alex Morgan",
-        phone: cleanPhone,
-        avatar:
-          "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&auto=format&fit=crop&q=80",
-        isExisting: true,
-      });
-    }, 400);
+      const matches = searchPeersByPhone(phoneNumber.trim());
+      if (matches.length > 0) {
+        const peer = matches[0];
+        setSearchResult({
+          name: peer.name,
+          phone: peer.phoneNumber,
+          avatar: peer.avatar,
+          school: peer.school,
+          isExisting: true,
+        });
+      } else {
+        const cleanPhone = `${phoneCountryCode} ${phoneNumber.trim()}`;
+        setSearchResult({
+          name: "StudyMate Classmate",
+          phone: cleanPhone,
+          avatar:
+            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+          school: "Verified Student",
+          isExisting: true,
+        });
+      }
+    }, 250);
   };
 
   const handleStartChatWithFriend = () => {
     if (!searchResult) return;
 
     createStudyGroup({
-      name: `Chat with ${searchResult.name}`,
+      name: `Study Circle with ${searchResult.name}`,
       subject: "Other",
-      description: `Direct study chat connected via ${searchResult.phone}`,
+      description: `Direct collaborative group connected via ${searchResult.phone}`,
       isPrivate: true,
       members: [
         {
           id: user.id,
-          name: "You",
+          name: `${user.name} (Admin)`,
           avatar: user.avatar,
           role: "admin",
           isOnline: true,
           studyStreak: user.streakDays || 0,
+          phoneNumber: user.phoneNumber,
+          institution: user.institution,
         },
         {
           id: `friend-phone-${Date.now()}`,
@@ -134,6 +204,8 @@ export const GroupsView: React.FC = () => {
           role: "member",
           isOnline: true,
           studyStreak: 5,
+          phoneNumber: searchResult.phone,
+          institution: searchResult.school || "StudyMate Peer",
         },
       ],
     });
@@ -154,9 +226,11 @@ export const GroupsView: React.FC = () => {
       role: "member",
       isOnline: true,
       studyStreak: 5,
+      phoneNumber: searchResult.phone,
+      institution: searchResult.school || "StudyMate Peer",
     });
 
-    setAddedMemberSuccess(`Added ${searchResult.name} to "${currentGroup.name}"!`);
+    setAddedMemberSuccess(`Added ${searchResult.name} (${searchResult.phone}) to "${currentGroup.name}"!`);
     setSearchResult(null);
     setPhoneNumber("");
     setShowAddMemberByPhone(false);
@@ -166,6 +240,15 @@ export const GroupsView: React.FC = () => {
     setTimeout(() => {
       setAddedMemberSuccess(null);
     }, 4000);
+  };
+
+  const handleDeleteMemberFromGroup = (memberId: string, memberName: string) => {
+    if (!currentGroup) return;
+    removeMemberFromGroup(currentGroup.id, memberId);
+    setAddedMemberSuccess(`Deleted ${memberName} from "${currentGroup.name}".`);
+    setTimeout(() => {
+      setAddedMemberSuccess(null);
+    }, 3500);
   };
 
   return (
@@ -760,15 +843,39 @@ export const GroupsView: React.FC = () => {
                                 <Shield className="w-3 h-3 text-[#0A1931]" />
                               )}
                             </p>
-                            <p className="text-[10px] text-[#1B2A4A]/60 font-medium">
-                              {member.isOnline ? "Online now" : "Offline"}
-                            </p>
+                            <div className="flex items-center gap-2 text-[10px] text-[#1B2A4A]/60 font-medium">
+                              <span>{member.isOnline ? "Online now" : "Offline"}</span>
+                              {member.phoneNumber && (
+                                <>
+                                  <span>•</span>
+                                  <span className="flex items-center gap-0.5 text-slate-600">
+                                    <Phone className="w-2.5 h-2.5" />
+                                    <span>{member.phoneNumber}</span>
+                                  </span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 text-xs text-orange-600 font-bold">
-                          <Flame className="w-4 h-4 fill-orange-500" />
-                          <span>{member.studyStreak}d streak</span>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-xs text-orange-600 font-bold">
+                            <Flame className="w-4 h-4 fill-orange-500" />
+                            <span>{member.studyStreak}d</span>
+                          </div>
+
+                          {/* Delete friend from group button */}
+                          {member.role !== "admin" && member.id !== user.id && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMemberFromGroup(member.id, member.name)}
+                              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                              title={`Delete ${member.name} from group`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -847,6 +954,81 @@ export const GroupsView: React.FC = () => {
                   rows={3}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
                 />
+              </div>
+
+              {/* Add Friends by Phone or Network */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <label className="block text-xs font-bold text-[#0A1931] flex items-center gap-1.5">
+                  <UserPlus className="w-3.5 h-3.5 text-[#0A1931]" />
+                  <span>Add Friends & Peers to Group</span>
+                </label>
+
+                {friends.length > 0 && (
+                  <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                    <p className="text-[11px] text-slate-500 font-medium">Select from your friends:</p>
+                    {friends.map((f) => {
+                      const isSelected = selectedFriendIds.includes(f.id);
+                      return (
+                        <div
+                          key={f.id}
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedFriendIds(selectedFriendIds.filter((id) => id !== f.id));
+                            } else {
+                              setSelectedFriendIds([...selectedFriendIds, f.id]);
+                            }
+                          }}
+                          className={`p-2 rounded-xl border text-xs flex items-center justify-between cursor-pointer transition ${
+                            isSelected
+                              ? "bg-slate-50 border-[#0A1931] font-bold text-[#0A1931]"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <img
+                              src={f.avatar || "/studymate_logo.jpg"}
+                              alt={f.name}
+                              className="w-6 h-6 rounded-lg object-cover"
+                            />
+                            <div>
+                              <p className="leading-tight">{f.name}</p>
+                              {f.phoneNumber && (
+                                <p className="text-[10px] text-slate-500 font-normal">{f.phoneNumber}</p>
+                              )}
+                            </div>
+                          </div>
+                          <span
+                            className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] border ${
+                              isSelected
+                                ? "bg-[#0A1931] text-white border-[#0A1931]"
+                                : "border-slate-300"
+                            }`}
+                          >
+                            {isSelected ? "✓" : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Or invite peer by phone number */}
+                <div className="pt-1">
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1 flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-slate-500" />
+                    <span>Or add friend by phone number:</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={customPhoneInvite}
+                    onChange={(e) => setCustomPhoneInvite(e.target.value)}
+                    placeholder="e.g., +1 (555) 234-5678 or 555"
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Enter their registered phone number to automatically add them to the group.
+                  </p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-1">

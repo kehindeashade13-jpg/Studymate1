@@ -105,6 +105,7 @@ interface StudyContextType {
   setActiveGroup: (group: StudyGroup | null) => void;
   createStudyGroup: (groupData: Partial<StudyGroup>) => void;
   addMemberToGroup: (groupId: string, member: GroupMember) => void;
+  removeMemberFromGroup: (groupId: string, memberId: string) => void;
   groupMessages: Record<string, GroupMessage[]>;
   sendGroupMessage: (groupId: string, text: string, isAi?: boolean) => void;
   togglePinMessage: (groupId: string, messageId: string) => void;
@@ -153,6 +154,8 @@ interface StudyContextType {
   setIsAuthModalOpen: (open: boolean) => void;
   isPracticeStationModalOpen: boolean;
   setIsPracticeStationModalOpen: (open: boolean) => void;
+  isProfileSetupOpen: boolean;
+  setIsProfileSetupOpen: (open: boolean) => void;
 }
 
 const StudyContext = createContext<StudyContextType | undefined>(undefined);
@@ -357,6 +360,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isPracticeStationModalOpen, setIsPracticeStationModalOpen] = useState(false);
+  const [isProfileSetupOpen, setIsProfileSetupOpen] = useState(false);
 
   const openAddMaterialModal = (type: SourceType = "upload", query = "") => {
     setInitialImportType(type);
@@ -719,6 +723,28 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     triggerConfetti();
   };
 
+  const removeMemberFromGroup = (groupId: string, memberId: string) => {
+    setStudyGroups((prev) =>
+      prev.map((g) => {
+        if (g.id === groupId) {
+          return {
+            ...g,
+            members: g.members.filter((m) => m.id !== memberId),
+          };
+        }
+        return g;
+      })
+    );
+
+    setActiveGroup((prev) => {
+      if (!prev || prev.id !== groupId) return prev;
+      return {
+        ...prev,
+        members: prev.members.filter((m) => m.id !== memberId),
+      };
+    });
+  };
+
   const sendGroupMessage = (groupId: string, text: string, isAi = false) => {
     const newMsg: GroupMessage = {
       id: `msg-${Date.now()}`,
@@ -979,6 +1005,8 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsAuthModalOpen,
         isPracticeStationModalOpen,
         setIsPracticeStationModalOpen,
+        isProfileSetupOpen,
+        setIsProfileSetupOpen,
       }}
     >
       {children}
