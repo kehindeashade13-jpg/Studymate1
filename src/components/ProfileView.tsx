@@ -1,18 +1,9 @@
 import React, { useState } from "react";
 import { useStudy } from "../context/StudyContext";
 import {
-  User,
-  School,
-  BookOpen,
-  Award,
-  Check,
   Edit3,
-  Shield,
-  Flame,
-  Zap,
   Phone,
 } from "lucide-react";
-import { StudySubject } from "../types";
 
 export const ProfileView: React.FC = () => {
   const { user, updateUser, triggerConfetti } = useStudy();
@@ -194,39 +185,6 @@ export const ProfileView: React.FC = () => {
           </form>
         ) : (
           <div className="space-y-6">
-            {/* Phone Number Group Discoverability Card */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-3.5">
-                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#0A1931] shadow-2xs shrink-0">
-                  <Phone className="w-5 h-5 text-[#0A1931]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-[#0A1931] uppercase tracking-wider">
-                      Phone Number
-                    </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                      Discoverable in Groups
-                    </span>
-                  </div>
-                  <p className="text-base font-extrabold text-[#0A1931] mt-0.5">
-                    {user.phoneNumber || "+1 (555) 438-9201"}
-                  </p>
-                  <p className="text-xs text-[#1B2A4A]/70 mt-0.5">
-                    When classmates try to add you to a study group, they can find your account instantly using this phone number.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsEditing(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-[#0A1931] text-xs font-bold shadow-2xs transition self-start sm:self-center cursor-pointer shrink-0"
-              >
-                Change Number
-              </button>
-            </div>
-
             <div>
               <h3 className="text-xs font-bold text-[#0A1931] uppercase tracking-wider mb-1">
                 About Me & Bio
@@ -243,22 +201,6 @@ export const ProfileView: React.FC = () => {
               <p className="text-sm text-[#1B2A4A]/80 leading-relaxed">
                 {user.studyGoals || "Master daily concepts and score top percentile."}
               </p>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-bold text-[#0A1931] uppercase tracking-wider mb-2">
-                Enrolled Subjects
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {user.enrolledSubjects.map((s) => (
-                  <span
-                    key={s}
-                    className="px-3 py-1 rounded-xl bg-slate-100 text-xs font-bold text-[#0A1931] border border-slate-200"
-                  >
-                    {s}
-                  </span>
-                ))}
-              </div>
             </div>
 
             <div className="pt-4 border-t border-slate-200 flex items-center justify-between text-xs text-[#1B2A4A]/70">
