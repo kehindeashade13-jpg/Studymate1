@@ -100,6 +100,8 @@ export const REGISTERED_STUDYMATE_USERS: RegisteredPeer[] = [
   },
 ];
 
+export const registeredPeers = REGISTERED_STUDYMATE_USERS;
+
 // Helper to normalize phone numbers for loose and exact comparisons
 export function normalizePhone(phone: string): string {
   return phone.replace(/[^\d+]/g, "");
