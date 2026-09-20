@@ -15,7 +15,89 @@ import {
   Zap,
 } from "lucide-react";
 import { LessonStep, LessonQuestion } from "../types";
-import { create5QuestionsForLesson } from "../utils/studyTransformer";
+import { create5QuestionsForLesson, repairLessonPack } from "../utils/studyTransformer";
+
+function renderBoldSegments(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, pIdx) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={pIdx} className="font-bold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
+function formatLessonWriteup(text: string) {
+  if (!text) return null;
+  const blocks = text.split(/\n\n+/).map((b) => b.trim()).filter(Boolean);
+
+  return (
+    <div className="space-y-4 text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
+      {blocks.map((block, bIdx) => {
+        if (block.startsWith("### ")) {
+          const heading = block.replace(/^###\s+/, "");
+          return (
+            <h3 key={bIdx} className="text-sm sm:text-base font-bold text-blue-300 pt-2 border-b border-slate-800/80 pb-1">
+              {heading}
+            </h3>
+          );
+        }
+
+        if (block.startsWith("> ")) {
+          const quoteText = block.replace(/^>\s*/gm, "");
+          return (
+            <div key={bIdx} className="p-4 rounded-xl bg-blue-950/30 border-l-4 border-blue-500 text-blue-100 text-xs sm:text-sm leading-relaxed">
+              {renderBoldSegments(quoteText)}
+            </div>
+          );
+        }
+
+        const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+        const isBulletList = lines.length > 1 && lines.every((l) => l.startsWith("• ") || l.startsWith("- ") || l.startsWith("* "));
+        if (isBulletList) {
+          const items = lines.map((l) => l.replace(/^[\s•\-*]+\s*/, ""));
+          return (
+            <ul key={bIdx} className="space-y-2 pl-1">
+              {items.map((item, iIdx) => (
+                <li key={iIdx} className="flex items-start gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-2 shrink-0" />
+                  <span>{renderBoldSegments(item)}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        const isNumberedList = lines.length > 1 && lines.every((l) => /^\d+\.\s+/.test(l));
+        if (isNumberedList) {
+          const items = lines.map((l) => l.replace(/^\d+\.\s+/, ""));
+          return (
+            <ol key={bIdx} className="space-y-2 pl-1">
+              {items.map((item, iIdx) => (
+                <li key={iIdx} className="flex items-start gap-2.5">
+                  <span className="px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300 text-[10px] font-bold shrink-0 mt-0.5">
+                    {iIdx + 1}
+                  </span>
+                  <span>{renderBoldSegments(item)}</span>
+                </li>
+              ))}
+            </ol>
+          );
+        }
+
+        return (
+          <p key={bIdx} className="leading-relaxed">
+            {renderBoldSegments(block)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 export const LearnView: React.FC = () => {
   const {
@@ -29,7 +111,8 @@ export const LearnView: React.FC = () => {
     setIsAssistantOpen,
   } = useStudy();
 
-  const currentLessonPack = activeMaterial ? lessons[activeMaterial.id] : null;
+  const rawLessonPack = activeMaterial ? lessons[activeMaterial.id] : null;
+  const currentLessonPack = rawLessonPack && activeMaterial ? repairLessonPack(rawLessonPack, activeMaterial.title) : null;
 
   const [currentStepIdx, setCurrentStepIdx] = useState<number>(
     currentLessonPack ? currentLessonPack.currentStepIndex || 0 : 0
@@ -194,8 +277,8 @@ export const LearnView: React.FC = () => {
         </div>
 
         {/* Lesson Body Content */}
-        <div className="text-xs sm:text-sm text-slate-200 leading-relaxed space-y-4 whitespace-pre-line font-sans">
-          {currentStep.content}
+        <div className="pt-2">
+          {formatLessonWriteup(currentStep.content)}
         </div>
 
         {/* Intuitive Analogy Box */}

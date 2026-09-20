@@ -22,7 +22,7 @@ import {
 import { useStudy, ActiveTab } from "../context/StudyContext";
 import { StudySubject, SourceType, StudyMaterial } from "../types";
 import { ProcessingScreen } from "./ProcessingScreen";
-import { generateFallbackStudyPackage, safeFetchJson, cleanTitle } from "../utils/studyTransformer";
+import { generateFallbackStudyPackage, safeFetchJson, cleanTitle, cleanToNaturalEnglish } from "../utils/studyTransformer";
 
 export const AddMaterialModal: React.FC = () => {
   const {
@@ -39,11 +39,13 @@ export const AddMaterialModal: React.FC = () => {
   } = useStudy();
 
   const [activeImportType, setActiveImportType] = useState<SourceType>(initialImportType || "upload");
-  const [subject, setSubject] = useState<StudySubject>("Biology");
+  const [subject, setSubject] = useState<StudySubject>("Chemistry");
   const [title, setTitle] = useState(initialImportQuery || "");
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
 
   React.useEffect(() => {
     if (isAddMaterialModalOpen) {
@@ -79,29 +81,61 @@ export const AddMaterialModal: React.FC = () => {
     if (!file) return;
 
     const fileName = file.name;
+    const cleanDocTitle = cleanTitle(fileName.replace(/\.[^/.]+$/, ""));
     setUploadedFileName(fileName);
 
     if (!title) {
-      setTitle(cleanTitle(fileName.replace(/\.[^/.]+$/, "")));
+      setTitle(cleanDocTitle);
     }
 
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setImagePreview(event.target?.result as string);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      setUploadedFileUrl(dataUrl);
+
+      if (file.type.startsWith("image/")) {
+        setImagePreview(dataUrl);
         setContent(
-          `# Scanned Document: ${fileName}\n\n[Study material image loaded for optical OCR extraction. Visual diagrams, formulas, and textbook excerpts prepared for AI analysis.]`
+          `# Scanned Document: ${cleanDocTitle}\n\n[Study material image loaded for optical OCR extraction. Visual diagrams, formulas, and textbook excerpts prepared for AI analysis.]`
         );
-      };
-      reader.readAsDataURL(file);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        setContent(text || `Uploaded study file: ${fileName}`);
-      };
-      reader.readAsText(file);
-    }
+      } else if (file.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) {
+        setIsExtractingDoc(true);
+        setContent(`Extracting readable lecture notes and formulas from "${fileName}"...`);
+        try {
+          const res = await fetch("/api/extract-document", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              base64: dataUrl,
+              mimeType: "application/pdf",
+              fileName,
+            }),
+          });
+          const json = await res.json();
+          if (json?.success && json.text && json.text.trim().length > 30) {
+            setContent(cleanToNaturalEnglish(json.text));
+          } else {
+            setContent(
+              `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`
+            );
+          }
+        } catch {
+          setContent(
+            `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`
+          );
+        } finally {
+          setIsExtractingDoc(false);
+        }
+      } else {
+        try {
+          const text = atob(dataUrl.split(",")[1] || "");
+          setContent(cleanToNaturalEnglish(text) || `# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+        } catch {
+          setContent(`# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   // Audio recording handlers
@@ -184,10 +218,13 @@ export const AddMaterialModal: React.FC = () => {
       subject,
       activeImportType,
       youtubeUrl || undefined,
-      imagePreview || undefined
+      uploadedFileUrl || imagePreview || undefined
     );
 
-    let resolvedMaterial = fallbackPkg.material;
+    let resolvedMaterial = {
+      ...fallbackPkg.material,
+      fileUrl: uploadedFileUrl || imagePreview || undefined,
+    };
     let resolvedNotes = fallbackPkg.notes;
     let resolvedFlashcards = fallbackPkg.flashcards;
     let resolvedQuiz = fallbackPkg.quiz;
@@ -520,7 +557,17 @@ export const AddMaterialModal: React.FC = () => {
                     />
                   </div>
 
-                  {uploadedFileName && (
+                  {isExtractingDoc && (
+                    <div className="mt-3 flex items-center gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-[#0A1931] animate-pulse">
+                      <RefreshCw className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-blue-950">Extracting Academic Document...</p>
+                        <p className="text-[11px] text-blue-700">Running high-fidelity text & formula extraction for {uploadedFileName}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {uploadedFileName && !isExtractingDoc && (
                     <div className="mt-3 flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[#0A1931]">
                       <div className="flex items-center gap-2.5">
                         <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
@@ -528,13 +575,14 @@ export const AddMaterialModal: React.FC = () => {
                         </div>
                         <div>
                           <p className="text-xs font-bold text-[#0A1931]">{uploadedFileName}</p>
-                          <p className="text-[11px] text-emerald-700">File loaded and ready for upload</p>
+                          <p className="text-[11px] text-emerald-700">Document extracted & ready to generate study decks</p>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => {
                           setUploadedFileName(null);
+                          setUploadedFileUrl(null);
                           setContent("");
                         }}
                         className="text-xs font-semibold text-slate-500 hover:text-red-600 cursor-pointer"

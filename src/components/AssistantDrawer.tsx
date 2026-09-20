@@ -11,6 +11,9 @@ import {
   RotateCcw,
   Bot,
   User,
+  ChevronDown,
+  Layers,
+  CheckCircle2,
 } from "lucide-react";
 
 interface ChatMessage {
@@ -21,20 +24,29 @@ interface ChatMessage {
 }
 
 export const AssistantDrawer: React.FC = () => {
-  const { isAssistantOpen, setIsAssistantOpen, activeMaterial, user } = useStudy();
+  const { isAssistantOpen, setIsAssistantOpen, activeMaterial, setActiveMaterial, materials, user } = useStudy();
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [selectedMatId, setSelectedMatId] = useState<string>(activeMaterial?.id || (materials[0]?.id || ""));
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     {
       id: "m1",
       role: "assistant",
-      text: `Hello ${user.name}! I'm your StudyMate AI Tutor. I can explain difficult mechanisms, invent memorable mnemonics, solve practice scenarios, or break down any topic from your study materials. What would you like to explore?`,
+      text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor.\n\nI have reviewed your course materials and I am ready to give you **detailed explanations**, break down **complex mechanisms**, quiz you on high-yield questions, or provide **custom mnemonics**.\n\nWhat would you like to explore from your uploaded material?`,
       timestamp: "Just now",
     },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const currentConnectedMaterial = materials.find((m) => m.id === selectedMatId) || activeMaterial || materials[0] || null;
+
+  useEffect(() => {
+    if (activeMaterial && activeMaterial.id !== selectedMatId) {
+      setSelectedMatId(activeMaterial.id);
+    }
+  }, [activeMaterial]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,14 +70,24 @@ export const AssistantDrawer: React.FC = () => {
     setLoading(true);
 
     try {
+      const mat = currentConnectedMaterial;
+      const richContext = mat
+        ? `Active Material: "${mat.title}" (${mat.subject})
+Summary: ${mat.summary || "No summary"}
+Key Topics: ${(mat.mainTopics || []).join(", ")}
+Definitions: ${(mat.definitions || []).slice(0, 15).map((d) => `${d.term}: ${d.definition}`).join("; ")}
+Formulas: ${(mat.formulas || []).map((f) => `${f.name}: ${f.formula}`).join("; ")}
+Potential Questions: ${(mat.potentialExamQuestions || []).slice(0, 5).join(" | ")}
+Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
+        : "No specific file uploaded.";
+
       const res = await fetch("/api/gemini/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: queryText,
-          studyContext: activeMaterial
-            ? `Active Material: "${activeMaterial.title}" (${activeMaterial.subject})\nSummary: ${activeMaterial.summary}\nKey Concepts: ${activeMaterial.keyConcepts?.map((k) => k.concept).join(", ")}`
-            : "No active material selected.",
+          studyContext: richContext,
+          currentMaterial: mat ? { title: mat.title, subject: mat.subject, summary: mat.summary } : null,
           history: messages.slice(-4).map((m) => ({
             role: m.role === "user" ? "user" : "model",
             parts: [{ text: m.text }],
@@ -76,7 +98,8 @@ export const AssistantDrawer: React.FC = () => {
       const data = await res.json();
       const replyText =
         data.reply ||
-        "I'm here to help! Remember: focusing on active recall and testing yourself is the fastest route to long-term understanding.";
+        data.answer ||
+        "I'm here to help you master this material! Tell me what concept or question you'd like to work through.";
 
       setMessages((prev) => [
         ...prev,
@@ -93,7 +116,7 @@ export const AssistantDrawer: React.FC = () => {
         {
           id: `ai-${Date.now()}`,
           role: "assistant",
-          text: "I experienced a brief hiccup connecting to the server. Could you repeat your question?",
+          text: "I experienced a brief communication pause. Please feel free to ask again!",
           timestamp: "Just now",
         },
       ]);
@@ -102,61 +125,157 @@ export const AssistantDrawer: React.FC = () => {
     }
   };
 
+  // Helper to render bold segments and markdown headers nicely
+  const renderMessageContent = (content: string) => {
+    const lines = content.split("\n");
+    return lines.map((line, lineIdx) => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith("### ")) {
+        return (
+          <h4 key={lineIdx} className="font-black text-sm text-[#0A1931] mt-2 mb-1">
+            {trimmed.replace("### ", "")}
+          </h4>
+        );
+      }
+      if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+        const itemText = trimmed.slice(2);
+        return (
+          <li key={lineIdx} className="ml-4 list-disc text-xs leading-relaxed my-0.5">
+            {renderBoldSegments(itemText)}
+          </li>
+        );
+      }
+      if (/^\d+\.\s/.test(trimmed)) {
+        const itemText = trimmed.replace(/^\d+\.\s/, "");
+        return (
+          <div key={lineIdx} className="flex items-start gap-1.5 text-xs leading-relaxed my-1">
+            <span className="font-bold text-[#0A1931] shrink-0">•</span>
+            <div>{renderBoldSegments(itemText)}</div>
+          </div>
+        );
+      }
+      if (!trimmed) {
+        return <div key={lineIdx} className="h-2" />;
+      }
+      return (
+        <p key={lineIdx} className="text-xs leading-relaxed my-0.5">
+          {renderBoldSegments(line)}
+        </p>
+      );
+    });
+  };
+
+  const renderBoldSegments = (text: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={i} className="font-extrabold text-[#0A1931]">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/60 backdrop-blur-xs flex justify-end">
-      <div className="w-full max-w-md bg-slate-900 border-l border-slate-800 text-white flex flex-col h-full shadow-2xl animate-in slide-in-from-right duration-300">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-[#0A1931]/60 backdrop-blur-xs flex justify-end">
+      <div className="w-full max-w-lg bg-white border-l border-slate-200 text-[#0A1931] flex flex-col h-full shadow-2xl animate-in slide-in-from-right duration-300">
         {/* Top Header */}
-        <div className="p-4 border-b border-slate-800 bg-slate-900/90 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow">
-              <MessageSquare className="w-4 h-4 text-white" />
+        <div className="p-4 border-b border-slate-200 bg-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#0A1931] text-white flex items-center justify-center shadow-xs">
+              <Bot className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                <span>StudyMate AI Assistant</span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              </h3>
-              <p className="text-[10px] text-slate-400">
-                {activeMaterial ? `Context: ${activeMaterial.title}` : "Ready to guide you"}
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-[#0A1931]">StudyMate AI Tutor</h3>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Tutor active" />
+              </div>
+              <p className="text-[11px] text-[#1B2A4A]/70">
+                Detailed explanations & insights tied to your files
               </p>
             </div>
           </div>
 
           <button
             onClick={() => setIsAssistantOpen(false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            className="p-2 rounded-xl text-slate-400 hover:text-[#0A1931] hover:bg-slate-100 transition cursor-pointer"
+            title="Close Tutor"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Quick Suggested Action Chips */}
-        <div className="p-3 border-b border-slate-800 bg-slate-900/50 flex gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+        {/* Connected File Selector Bar */}
+        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 text-[#0A1931] font-bold truncate">
+            <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+            <span className="text-[11px] text-slate-500">Connected File:</span>
+            <span className="truncate text-xs font-black">
+              {currentConnectedMaterial ? currentConnectedMaterial.title : "No file connected"}
+            </span>
+          </div>
+
+          {materials.length > 1 && (
+            <select
+              value={selectedMatId}
+              onChange={(e) => {
+                setSelectedMatId(e.target.value);
+                const chosen = materials.find((m) => m.id === e.target.value);
+                if (chosen) setActiveMaterial(chosen);
+              }}
+              className="px-2 py-1 rounded-lg bg-white border border-slate-300 text-[10px] font-bold text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
+            >
+              {materials.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Quick Prompt Chips */}
+        <div className="p-2.5 border-b border-slate-100 bg-white flex gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
           <button
-            onClick={() => handleSendMessage("Explain this concept simply like I'm 12 years old.")}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-700"
+            onClick={() =>
+              handleSendMessage(
+                `Please give me a detailed, step-by-step explanation of the most important concept in "${currentConnectedMaterial?.title || "this file"}" and how it works.`
+              )
+            }
+            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <Lightbulb className="w-3 h-3 text-amber-400" />
-            <span>Explain simply</span>
+            <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+            <span>Deep Explanation</span>
           </button>
           <button
-            onClick={() => handleSendMessage("Create a funny mnemonic to help me remember this sequence.")}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-700"
+            onClick={() =>
+              handleSendMessage(
+                `Quiz me on a high-yield exam question from "${currentConnectedMaterial?.title || "my uploaded material"}".`
+              )
+            }
+            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <Sparkles className="w-3 h-3 text-purple-400" />
-            <span>Give Mnemonic</span>
+            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+            <span>Exam Practice Quiz</span>
           </button>
           <button
-            onClick={() => handleSendMessage("Quiz me on a tricky edge-case scenario for this topic.")}
-            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-700"
+            onClick={() =>
+              handleSendMessage(
+                `Invent a memorable mnemonic to help me retain the key steps or terms in "${currentConnectedMaterial?.title || "this document"}".`
+              )
+            }
+            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <HelpCircle className="w-3 h-3 text-blue-400" />
-            <span>Pop Quiz Me</span>
+            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+            <span>Memory Mnemonic</span>
           </button>
         </div>
 
         {/* Messages Stream */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+        <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
           {messages.map((m) => {
             const isUser = m.role === "user";
             return (
@@ -165,38 +284,48 @@ export const AssistantDrawer: React.FC = () => {
                 className={`flex gap-3 text-xs ${isUser ? "flex-row-reverse" : "flex-row"}`}
               >
                 <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
-                    isUser ? "bg-blue-600" : "bg-gradient-to-tr from-indigo-600 to-purple-600"
+                  className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${
+                    isUser ? "bg-[#0A1931] text-white" : "bg-white border border-slate-200 text-[#0A1931]"
                   }`}
                 >
-                  {isUser ? <User className="w-3.5 h-3.5 text-white" /> : <Bot className="w-3.5 h-3.5 text-white" />}
+                  {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5 text-blue-600" />}
                 </div>
 
                 <div
-                  className={`max-w-[85%] p-3.5 rounded-2xl leading-relaxed whitespace-pre-line ${
+                  className={`max-w-[85%] p-4 rounded-2xl ${
                     isUser
-                      ? "bg-blue-600 text-white"
-                      : "bg-slate-800/90 text-slate-200 border border-slate-700/60 shadow-sm"
+                      ? "bg-[#0A1931] text-white shadow-xs"
+                      : "bg-white text-[#0A1931] border border-slate-200 shadow-2xs"
                   }`}
                 >
-                  <p>{m.text}</p>
-                  <span className="text-[9px] text-slate-400 block mt-1 text-right">{m.timestamp}</span>
+                  {isUser ? (
+                    <p className="leading-relaxed whitespace-pre-line font-medium">{m.text}</p>
+                  ) : (
+                    <div>{renderMessageContent(m.text)}</div>
+                  )}
+                  <span
+                    className={`text-[9px] block mt-1.5 text-right ${
+                      isUser ? "text-slate-300" : "text-slate-400"
+                    }`}
+                  >
+                    {m.timestamp}
+                  </span>
                 </div>
               </div>
             );
           })}
 
           {loading && (
-            <div className="flex items-center gap-2 p-3 rounded-2xl bg-slate-800/50 text-slate-400 text-xs w-fit">
-              <div className="w-3.5 h-3.5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
-              <span>StudyMate AI is thinking…</span>
+            <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-white border border-slate-200 text-xs text-[#0A1931] w-fit shadow-2xs">
+              <div className="w-4 h-4 rounded-full border-2 border-[#0A1931] border-t-transparent animate-spin" />
+              <span className="font-semibold">StudyMate Tutor is analyzing your uploaded file…</span>
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
         {/* Input Bar */}
-        <div className="p-3 border-t border-slate-800 bg-slate-900">
+        <div className="p-3.5 border-t border-slate-200 bg-white">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -208,13 +337,14 @@ export const AssistantDrawer: React.FC = () => {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything about your study materials..."
-              className="flex-1 px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500 transition"
+              placeholder="Ask anything about your uploaded file..."
+              className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] focus:bg-white transition"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="p-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 text-white transition shadow cursor-pointer"
+              className="p-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] disabled:opacity-40 text-white transition shadow-xs cursor-pointer flex items-center justify-center"
+              title="Send to Tutor"
             >
               <Send className="w-4 h-4" />
             </button>

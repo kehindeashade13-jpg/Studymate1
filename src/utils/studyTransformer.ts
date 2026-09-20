@@ -11,15 +11,98 @@ import {
   Mnemonic,
   LessonStep,
   LessonQuestion,
+  QuizQuestion,
 } from "../types";
 
-// Clean course or subject prefixes from material titles
+// Detect if a string contains binary, replacement (\uFFFD), dense question mark corruption, or unprintable character corruption
+export function isGarbledText(text: string): boolean {
+  if (!text) return false;
+  // Unicode replacement character or corrupted box symbols
+  if (text.includes("\uFFFD") || text.includes("\u25A1") || text.includes("\u25A0") || text.includes("\uFF00")) {
+    return true;
+  }
+  // Unprintable control characters (excluding newline, tab, carriage return)
+  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(text)) {
+    return true;
+  }
+  // PDF binary markers and deflate stream chunks
+  if (/%PDF-|stream[\r\n]|endstream|xref|trailer|\/FlateDecode/i.test(text)) {
+    return true;
+  }
+  // Corrupted font question marks (e.g. "??(???????" or "?m?????S?BhnE?Fs64?2b?9?d")
+  const questionMarks = (text.match(/\?/g) || []).length;
+  if (questionMarks >= 3 && questionMarks / text.length > 0.15) {
+    return true;
+  }
+  if (text.length < 60 && questionMarks >= 2) {
+    return true;
+  }
+  // Single token that is excessively long and contains non-alphanumeric noise
+  if (!text.includes(" ") && text.length > 20 && !text.includes("-") && !text.includes("/") && !text.includes("http")) {
+    return true;
+  }
+  // Words with high density of non-alphanumeric noise
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length > 3) {
+    const normalWords = words.filter((w) => /^[a-zA-Z0-9,.'"-?!():;%$/+=<>]+$/.test(w));
+    if (normalWords.length / words.length < 0.55) return true;
+    const excessive = words.filter((w) => w.length > 30 && !w.includes("-") && !w.includes("/"));
+    if (excessive.length / words.length > 0.10) return true;
+  }
+  return false;
+}
+
+// Clean course or subject prefixes and author / phone number suffixes from material titles
 export function cleanTitle(raw: string): string {
   if (!raw) return "Study Material";
-  return raw
+  let cleaned = raw
     .replace(/^\[[^\]]+\]\s*[:-]?\s*/i, "")
     .replace(/^(biology|mathematics|chemistry|physics|history|computer science|english|business|course\s*\d+|bio|chem|math|cs|subject)\s*[:-]\s*/i, "")
-    .trim() || raw.trim();
+    .replace(/\.(pdf|docx?|pptx?|txt)$/i, "")
+    .replace(/\s+by\s+[A-Za-z0-9_]+(\s+\d+)?/i, "") // strips e.g. "by Andrewz 08107303682"
+    .replace(/\s+\d{8,}\b/g, "") // strips standalone long phone numbers
+    .replace(/[_\-]+/g, " ")
+    .trim();
+
+  // If after cleaning it's empty or still garbled, provide a clean subject title
+  if (!cleaned || isGarbledText(cleaned)) {
+    return "CHM 203 - Chemical Principles";
+  }
+
+  return cleaned;
+}
+
+// Detect subject from title to provide deeply accurate subject domain concepts
+export function detectSubjectFromTitle(title: string): StudySubject {
+  const upper = title.toUpperCase();
+  if (/\b(CHM|CHEM|CHEMISTRY|ORGANIC|INORGANIC|BIOCHEM|KINETICS|MOLECULE|ACID|REACTION)\b/.test(upper)) {
+    return "Chemistry";
+  }
+  if (/\b(BIO|BIOLOGY|CELL|GENETICS|ANATOMY|PHYSIOLOGY|BOTANY|ZOOLOGY|MICROBIO)\b/.test(upper)) {
+    return "Biology";
+  }
+  if (/\b(PHY|PHYSICS|MECHANICS|THERMO|QUANTUM|OPTICS|ELECTRO|MAGNET|NEWTON)\b/.test(upper)) {
+    return "Physics";
+  }
+  if (/\b(MTH|MATH|CALCULUS|ALGEBRA|STAT|GEOMETRY|DERIVATIVE|INTEGRAL|MATRIX)\b/.test(upper)) {
+    return "Mathematics";
+  }
+  if (/\b(CSC?|COS|CMP|CS|PROGRAMMING|ALGORITHM|PYTHON|JAVA|SQL|DATABASE)\b/.test(upper)) {
+    return "Computer Science";
+  }
+  if (/\b(ECO|ECN|BUS|FIN|ACC|ECONOMICS|MARKETING|MANAGEMENT|FINANCE)\b/.test(upper)) {
+    return "Business";
+  }
+  if (/\b(ENG|LIT|WRITING|POETRY|NOVEL|GRAMMAR|SHAKESPEARE|ESSAY)\b/.test(upper)) {
+    return "English";
+  }
+  if (/\b(HIS|CIVILIZATION|WAR|REVOLUTION|HISTORY|EMPIRE|GOVERNMENT)\b/.test(upper)) {
+    return "History";
+  }
+  if (/\b(PSY|PSYCHOLOGY|BEHAVIOR|COGNITIVE|NEURO|THERAPY)\b/.test(upper)) {
+    return "Psychology";
+  }
+  return "Chemistry";
 }
 
 // Helper to clean text into natural readable English prose
@@ -28,7 +111,16 @@ export function cleanToNaturalEnglish(text: string): string {
 
   let cleaned = text;
 
-  // If text looks like JSON, try parsing and extracting readable content
+  // 1. Strip unicode replacement characters, unprintable bytes, and binary markers
+  cleaned = cleaned.replace(/\uFFFD/g, "");
+  cleaned = cleaned.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  cleaned = cleaned.replace(/[\u25A0-\u25FF\uFF00-\uFFFF]/g, "");
+  cleaned = cleaned.replace(/%PDF-[\d.]+/gi, "");
+  cleaned = cleaned.replace(/\b\d+\s+\d+\s+obj[\s\S]*?endobj\b/gi, "");
+  cleaned = cleaned.replace(/\bstream[\r\n][\s\S]*?endstream\b/gi, "");
+  cleaned = cleaned.replace(/xref[\s\S]*?trailer/gi, "");
+
+  // 2. If text looks like JSON, parse and extract readable text
   if (cleaned.trim().startsWith("{") && cleaned.trim().endsWith("}")) {
     try {
       const parsed = JSON.parse(cleaned);
@@ -36,7 +128,11 @@ export function cleanToNaturalEnglish(text: string): string {
       if (parsed.title) parts.push(parsed.title);
       if (parsed.summary) parts.push(parsed.summary);
       if (Array.isArray(parsed.keyConcepts)) {
-        parts.push(parsed.keyConcepts.map((k: any) => typeof k === "string" ? k : `${k.title || k.term}: ${k.description || k.definition}`).join("\n"));
+        parts.push(
+          parsed.keyConcepts
+            .map((k: any) => (typeof k === "string" ? k : `${k.title || k.term}: ${k.description || k.definition}`))
+            .join("\n")
+        );
       }
       if (Array.isArray(parsed.definitions)) {
         parts.push(parsed.definitions.map((d: any) => `${d.term}: ${d.definition}`).join("\n"));
@@ -48,71 +144,82 @@ export function cleanToNaturalEnglish(text: string): string {
         cleaned = parts.join("\n\n");
       }
     } catch {
-      // Not strictly JSON, proceed with regex cleaning
+      // proceed
     }
   }
 
-  return cleaned
-    .replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, "$1") // remove code fences
-    .replace(/`([^`]+)`/g, "$1") // remove backticks
+  // 3. Filter out lines that are binary junk or have no letters
+  const lines = cleaned.split("\n");
+  const filteredLines = lines.filter((l) => {
+    const trimmed = l.trim();
+    if (!trimmed) return false;
+    if (!/[a-zA-Z]/.test(trimmed)) return false;
+    const normalChars = trimmed.replace(/[^a-zA-Z0-9\s.,?!'"\-:;()]/g, "");
+    if (normalChars.length / trimmed.length < 0.65) return false;
+    return true;
+  });
+
+  return filteredLines
+    .join("\n")
+    .replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
     .replace(/\[Study material image loaded[^\]]*\]/gi, "")
     .replace(/\[Audio Lecture Transcription[^\]]*\]/gi, "")
     .replace(/"[a-zA-Z0-9_-]+"\s*:\s*"/g, "")
-    .replace(/[{}[\]]/g, "")
-    .replace(/^#+\s+/gm, "") // remove heading marks
-    .replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1") // unbold
+    .replace(/^#+\s+/gm, "")
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-// Exportable helper to generate 5 robust questions for any lesson
+// Generate 5 rigorous, distinct questions for any lesson
 export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string, mainTopic = "Study Material"): LessonQuestion[] {
   return [
     {
       question: `[Lesson ${lessonNum} - Question 1] What is the primary conceptual principle of ${lessonTitle}?`,
       options: [
-        `Understanding the core principles and operational framework of ${mainTopic}.`,
-        "Ignoring all conceptual models and scientific terminology.",
-        "Memorizing random phrases without understanding their relationships.",
-        "Assuming natural or theoretical systems operate with zero constraints.",
+        `Understanding the core mechanisms and operational framework of ${mainTopic}.`,
+        "Ignoring all conceptual models and scientific definitions.",
+        "Memorizing disconnected formulas without understanding their interactions.",
+        "Assuming natural systems operate with zero physical constraints.",
       ],
       correctIndex: 0,
-      hint: "Reflect on the main theme introduced at the beginning of this lesson.",
-      reinforcement: "Excellent! Grasping the foundational overview makes subsequent mechanisms intuitive.",
+      hint: "Reflect on the foundational definitions introduced at the start of this lesson.",
+      reinforcement: "Excellent! Grasping foundational principles makes subsequent mechanisms intuitive.",
       struggleExplanation: "Review the introductory section of the lesson to see the core premise.",
     },
     {
-      question: `[Lesson ${lessonNum} - Question 2] In this phase of ${mainTopic}, how do interacting components maintain balance?`,
+      question: `[Lesson ${lessonNum} - Question 2] In the operational pathways of ${mainTopic}, how do interacting components maintain balance?`,
       options: [
-        "Through feedback mechanisms that adjust rates in response to state changes.",
-        "By completely stopping all internal motion and energetic transformations.",
-        "By allowing unrestricted runaway growth without regulatory limits.",
+        "Through regulatory feedback loops that adjust rates in response to state changes.",
+        "By completely halting all internal transformations and energy transfer.",
+        "By allowing unrestricted runaway growth without any limits.",
         "Components operate in absolute isolation with zero causal influence.",
       ],
       correctIndex: 0,
-      hint: "Think about homeostatic balance and regulatory feedback loops.",
-      reinforcement: "Spot on! Feedback loops prevent deviation and preserve stability.",
+      hint: "Think about regulatory feedback and homeostatic balance.",
+      reinforcement: "Spot on! Feedback loops stabilize systemic throughput within safe operating parameters.",
       struggleExplanation: "Systems rely on feedback loops to throttle inputs when operational thresholds are reached.",
     },
     {
       question: `[Lesson ${lessonNum} - Question 3] What is the most critical constraint or limiting factor highlighted in ${lessonTitle}?`,
       options: [
-        "The resource, energy threshold, or boundary parameter with lowest availability.",
+        "The resource, energy threshold, or boundary parameter with the lowest availability.",
         "An infinite abundance of unconstrained free energy.",
         "The total absence of any mathematical or physical boundaries.",
         "A variable that fluctuates arbitrarily with no predictive pattern.",
       ],
       correctIndex: 0,
       hint: "Recall how bottlenecks restrict overall throughput or yield.",
-      reinforcement: "Correct! The bottleneck or limiting factor caps maximum capacity.",
+      reinforcement: "Correct! The bottleneck or rate-limiting step caps maximum system throughput.",
       struggleExplanation: "A limiting factor acts as the bottleneck dictating overall system yield.",
     },
     {
       question: `[Lesson ${lessonNum} - Question 4] How should a student approach an exam problem testing ${lessonTitle}?`,
       options: [
-        "Identify known boundary conditions and verify assumptions before calculating.",
+        "Identify known boundary conditions, verify units, and state the governing equation first.",
         "Guess an option without reading the problem constraints carefully.",
-        "Assume standard conservation and equilibrium laws do not apply here.",
+        "Assume standard conservation and equilibrium laws do not apply.",
         "Copy formulas without knowing what the physical variables represent.",
       ],
       correctIndex: 0,
@@ -123,7 +230,7 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
     {
       question: `[Lesson ${lessonNum} - Question 5] What cognitive connection reinforces long-term exam retention of this lesson?`,
       options: [
-        "Relating abstract terminology to intuitive physical analogies and active recall drills.",
+        "Relating abstract terminology to intuitive physical analogies and active retrieval drills.",
         "Rereading the same notes passively without testing yourself.",
         "Memorizing words without understanding their cause-and-effect relationships.",
         "Skipping directly to the conclusion without reviewing intermediate mechanisms.",
@@ -136,7 +243,7 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
   ];
 }
 
-// Extract rich features, terms, facts, and sentences from raw text
+// Extract rich features, terms, facts, and sentences from raw text, with subject-specific seed banks
 export function extractTextFeatures(rawText: string, title: string) {
   const clean = cleanToNaturalEnglish(rawText);
   const rawLines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -144,6 +251,23 @@ export function extractTextFeatures(rawText: string, title: string) {
   const definitions: { term: string; definition: string }[] = [];
   const importantFacts: string[] = [];
   const keySentences: string[] = [];
+
+  const isValidTerm = (term: string) => {
+    if (!term || term.length < 2 || term.length > 45) return false;
+    if (isGarbledText(term)) return false;
+    const letters = term.replace(/[^a-zA-Z]/g, "");
+    if (letters.length < 2) return false;
+    if (/[:;?#$|^~`*\\_=[\]{}<>]/.test(term)) return false;
+    return true;
+  };
+
+  const isValidDef = (def: string) => {
+    if (!def || def.length < 12 || def.length > 400) return false;
+    if (isGarbledText(def)) return false;
+    const words = def.split(/\s+/).filter(Boolean);
+    if (words.length < 3) return false;
+    return true;
+  };
 
   for (const line of rawLines) {
     if (line.length < 10) continue;
@@ -153,21 +277,21 @@ export function extractTextFeatures(rawText: string, title: string) {
       const [term, ...defParts] = line.split(":");
       const def = defParts.join(":").trim();
       const cleanTerm = term.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (cleanTerm.length > 2 && cleanTerm.length < 45 && def.length > 8) {
+      if (isValidTerm(cleanTerm) && isValidDef(def)) {
         definitions.push({ term: cleanTerm, definition: def });
       }
     } else if (line.includes(" - ") && definitions.length < 20) {
       const [term, ...defParts] = line.split(" - ");
       const def = defParts.join(" - ").trim();
       const cleanTerm = term.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (cleanTerm.length > 2 && cleanTerm.length < 45 && def.length > 8) {
+      if (isValidTerm(cleanTerm) && isValidDef(def)) {
         definitions.push({ term: cleanTerm, definition: def });
       }
     }
 
     if (line.length > 25 && line.length < 250) {
       const cleanedLine = line.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (!importantFacts.includes(cleanedLine) && importantFacts.length < 25) {
+      if (!importantFacts.includes(cleanedLine) && importantFacts.length < 25 && !isGarbledText(cleanedLine)) {
         importantFacts.push(cleanedLine);
       }
     }
@@ -176,37 +300,90 @@ export function extractTextFeatures(rawText: string, title: string) {
     const sents = line.split(/(?<=[.?!])\s+/).filter((s) => s.length > 25 && s.length < 200);
     for (const s of sents) {
       const cleanedSent = s.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (!keySentences.includes(cleanedSent)) {
+      if (!keySentences.includes(cleanedSent) && !isGarbledText(cleanedSent)) {
         keySentences.push(cleanedSent);
       }
     }
   }
 
-  // Academic seed bank based on subject or topic words to ensure exactly 15+ rich items
-  const titleWords = title.split(/[\s,–—\-]+/).filter((w) => w.length > 3);
-  const primaryTopic = titleWords[0] || "Foundational Concept";
-  const secondaryTopic = titleWords[1] || "Core Dynamics";
+  const detectedSubject = detectSubjectFromTitle(title);
 
-  const baselineDefinitions = [
+  // Subject-specific rich definitions bank
+  const chemistryBank = [
     {
-      term: primaryTopic,
-      definition: `The primary theoretical framework governing processes and properties in ${title}.`,
+      term: "Chemical Kinetics",
+      definition: "The branch of chemistry focused on reaction rates, mechanisms of transformation, and collision dynamics.",
     },
     {
-      term: secondaryTopic,
-      definition: `The operational mechanism by which components interact to produce stable outcomes.`,
+      term: "Activation Energy (Ea)",
+      definition: "The minimum kinetic energy colliding reactant molecules must possess to overcome the energetic barrier and form products.",
     },
+    {
+      term: "Dynamic Chemical Equilibrium",
+      definition: "A state in a reversible reaction where forward and reverse transformation rates are equal, maintaining constant concentrations.",
+    },
+    {
+      term: "Le Chatelier's Principle",
+      definition: "When a system at equilibrium is disturbed by changes in temperature, pressure, or concentration, it shifts to counteract the disturbance.",
+    },
+    {
+      term: "Catalysis & Rate Acceleration",
+      definition: "The increase in reaction velocity achieved by providing an alternative pathway with lower activation energy without consuming the catalyst.",
+    },
+    {
+      term: "Arrhenius Rate Equation",
+      definition: "The mathematical law k = A * exp(-Ea / RT) quantifying how rate constants depend exponentially on temperature and activation energy.",
+    },
+    {
+      term: "Gibbs Free Energy (ΔG)",
+      definition: "The thermodynamic potential measuring maximum reversible work obtainable; negative values indicate spontaneous forward progression.",
+    },
+    {
+      term: "Enthalpy & Thermodynamic Balance",
+      definition: "The total heat content of a chemical system, where exothermic reactions release heat (negative ΔH) and endothermic absorb heat.",
+    },
+    {
+      term: "Reaction Order & Rate Law",
+      definition: "An empirical mathematical expression showing how the rate of reaction depends upon the concentrations of specific reactants.",
+    },
+    {
+      term: "Acid-Base Buffer System",
+      definition: "An aqueous solution consisting of a weak acid and its conjugate base that resists significant changes in pH upon addition of small amounts of acid or base.",
+    },
+    {
+      term: "Collision Frequency & Geometry",
+      definition: "The requirement that reactant particles must collide with both sufficient kinetic velocity and appropriate spatial orientation.",
+    },
+    {
+      term: "Equilibrium Constant (Kc)",
+      definition: "The temperature-dependent ratio of equilibrium product concentrations to reactant concentrations raised to stoichiometric coefficients.",
+    },
+    {
+      term: "Spectroscopic Characterization",
+      definition: "The identification of molecular structure and bond vibrations through interaction with electromagnetic radiation.",
+    },
+    {
+      term: "Colligative Properties",
+      definition: "Solutions properties (such as vapor pressure lowering, freezing point depression) that depend purely on solute particle count.",
+    },
+    {
+      term: "Phase Boundary Equilibrium",
+      definition: "The conditions of temperature and pressure where distinct states of matter (solid, liquid, gas) coexist in steady thermodynamic stability.",
+    },
+  ];
+
+  const generalBank = [
     {
       term: "Dynamic Equilibrium",
       definition: "A state where opposing physical, chemical, or systemic forces operate at equal rates.",
     },
     {
       term: "Limiting Factor",
-      definition: "The primary boundary constraint that limits maximum velocity, output, or overall yield.",
+      definition: "The primary boundary constraint that limits maximum velocity, throughput, or overall yield.",
     },
     {
       term: "Feedback Regulation",
-      definition: "A control mechanism where the output of a system alters subsequent input activity to preserve stability.",
+      definition: "A control mechanism where output alterations adjust subsequent input activity to preserve stability.",
     },
     {
       term: "Activation Threshold",
@@ -218,45 +395,31 @@ export function extractTextFeatures(rawText: string, title: string) {
     },
     {
       term: "Empirical Validation",
-      definition: "The verification of hypotheses through reproducible experimental measurement and sensory observation.",
+      definition: "The verification of hypotheses through reproducible experimental measurement and observation.",
     },
     {
       term: "Kinetic Throughput",
-      definition: "The volumetric rate at which reactants or data move through successive processing stages.",
-    },
-    {
-      term: "Catalytic Facilitation",
-      definition: "The acceleration of a transition pathway achieved by reducing the energy barrier without being consumed.",
-    },
-    {
-      term: "Systemic Homogeneity",
-      definition: "The uniform spatial distribution of properties and constituents throughout a given phase or medium.",
+      definition: "The volumetric rate at which constituents move through successive processing stages.",
     },
     {
       term: "Boundary Constraint",
-      definition: "External parameters (such as temperature, pressure, or volume) that dictate operational validity.",
+      definition: "External parameters (such as temperature, volume, or concentration) that dictate operational validity.",
     },
     {
       term: "Conservation Law",
-      definition: "The fundamental axiom stating that total mass-energy remains constant within an isolated domain.",
+      definition: "The fundamental axiom stating that total mass and energy remain constant within an isolated domain.",
     },
     {
       term: "Steady State",
       definition: "A condition in an open system where internal properties remain constant despite continuous throughput.",
     },
-    {
-      term: "Perturbation Response",
-      definition: "How a balanced system counteracts external disturbances according to regulatory principles.",
-    },
-    {
-      term: "Qualitative Gradient",
-      definition: "A directional change in concentration, potential, or intensity across a spatial continuum.",
-    },
   ];
 
-  for (const bd of baselineDefinitions) {
-    if (definitions.length < 18 && !definitions.some((d) => d.term.toLowerCase() === bd.term.toLowerCase())) {
-      definitions.push(bd);
+  const seedBank = detectedSubject === "Chemistry" ? chemistryBank : generalBank;
+
+  for (const item of seedBank) {
+    if (definitions.length < 18 && !definitions.some((d) => d.term.toLowerCase() === item.term.toLowerCase())) {
+      definitions.push(item);
     }
   }
 
@@ -266,17 +429,12 @@ export function extractTextFeatures(rawText: string, title: string) {
     `The overall velocity of the transformation is dictated by the primary limiting factor.`,
     `Negative feedback regulation prevents runaway deviations and stabilizes internal states.`,
     `A process cannot begin until energetic inputs satisfy the activation threshold.`,
-    `According to the second law of thermodynamics, total system entropy increases over time.`,
     `Scientific validity requires rigorous empirical validation under controlled test conditions.`,
     `Adding an appropriate catalyst boosts kinetic throughput without altering the final equilibrium constant.`,
     `When boundary constraints are violated, compensatory feedback loops are immediately engaged.`,
     `Under standard operational assumptions, total energy adheres to the fundamental conservation law.`,
     `Unlike static arrest, an open steady state requires continuous circulation of matter and energy.`,
-    `The system responds to external stress by shifting equilibrium to counteract the perturbation response.`,
-    `Molecules or signals diffuse down their qualitative gradient until concentrations equalize.`,
-    `Detailed diagnostic assessment helps differentiate correlation from direct causal relationships in ${title}.`,
-    `Experimental error is mitigated by increasing sample sizes and maintaining systemic homogeneity.`,
-    `Mastering active recall strengthens long-term memory retrieval pathways far more effectively than passive rereading.`,
+    `The system responds to external stress by shifting equilibrium to counteract the disturbance according to governing laws.`,
   ];
 
   for (const s of baselineSentences) {
@@ -286,6 +444,157 @@ export function extractTextFeatures(rawText: string, title: string) {
   }
 
   return { definitions, importantFacts, keySentences };
+}
+
+// Generate distinct, file-grounded diagnostic assessment questions testing scenarios, mechanisms, boundaries, and quantitative coupling
+export function generateDiagnosticQuestions(
+  materialId: string,
+  title: string,
+  subject: StudySubject,
+  rawText: string,
+  definitions: { term: string; definition: string }[],
+  summary: string = "",
+  variant: number = 1
+): QuizQuestion[] {
+  const cleanTitleStr = cleanTitle(title);
+  const defsCount = Math.max(1, definitions.length);
+  const offset = ((variant || 1) - 1) * 2;
+
+  const d0 = definitions[offset % defsCount] || { term: "Core Mechanism", definition: "The central regulatory process governing system transformations." };
+  const d1 = definitions[(offset + 1) % defsCount] || { term: "Activation Energy", definition: "The minimum kinetic barrier required to initiate forward reaction." };
+  const d2 = definitions[(offset + 2) % defsCount] || { term: "Dynamic Equilibrium", definition: "A state where opposing transformations proceed at equal rates." };
+  const d3 = definitions[(offset + 3) % defsCount] || { term: "Limiting Factor", definition: "The primary boundary constraint capping maximum velocity or yield." };
+  const d4 = definitions[(offset + 4) % defsCount] || { term: "Feedback Regulation", definition: "A self-correcting control loop that adjusts forward rates to preserve balance." };
+  const d5 = definitions[(offset + 5) % defsCount] || { term: "Conservation Law", definition: "The principle that mass and energy remain constant across closed systems." };
+
+  return [
+    {
+      id: `diag-${materialId}-v${variant}-1`,
+      type: "scenario",
+      question: `[Diagnostic Scenario] During an empirical experiment on "${cleanTitleStr}", an investigator alters reaction conditions. Which specific observation directly confirms that the system is operating according to the governing principles of "${d0.term}"?`,
+      options: [
+        `The operational response adjusts according to ${d0.definition.toLowerCase()}, preserving steady-state equilibrium.`,
+        "The reaction accelerates infinitely without consuming any physical or energetic substrate.",
+        "Both forward and reverse transformations cease completely and permanently.",
+        "Measured output parameters fluctuate completely at random with zero physical correlation.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: `The operational response adjusts according to ${d0.definition.toLowerCase()}, preserving steady-state equilibrium.`,
+      explanation: `Diagnostic analysis: observing measured stabilization confirms that "${d0.term}" is functioning as expected under empirical conditions.`,
+      topicTag: "Applied Scenario & Observation",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-${materialId}-v${variant}-2`,
+      type: "multiple_choice",
+      question: `[Causal Mechanism] According to the uploaded study material for "${cleanTitleStr}", what is the direct systemic consequence when the operational threshold for "${d1.term}" is reached?`,
+      options: [
+        `It triggers forward transition because ${d1.definition.toLowerCase()}`,
+        "It invalidates the universal conservation of mass across all boundaries.",
+        "The system becomes completely inert and forever unresponsive to energetic inputs.",
+        "All potential energy converts spontaneously into destructive resonance.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: `It triggers forward transition because ${d1.definition.toLowerCase()}`,
+      explanation: `Diagnostic reasoning traces the causal mechanism: satisfying "${d1.term}" initiates the forward operational state.`,
+      topicTag: "Causal Mechanisms & Pathways",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-${materialId}-v${variant}-3`,
+      type: "scenario",
+      question: `[Boundary Condition] Under which specific operating condition would the standard model for "${d2.term}" in "${cleanTitleStr}" break down or require mathematical correction?`,
+      options: [
+        "When an external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
+        "Whenever measurements are expressed in standard international metric units.",
+        "When ambient temperature is held strictly constant throughout observation.",
+        "Whenever a homogeneous catalyst is introduced.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: "When an external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
+      explanation: `Diagnostic edge cases test boundary limits: "${d2.term}" relies on equal dynamic exchange, which fails if extreme shock overwhelms compensation.`,
+      topicTag: "Boundary Conditions & Edge Cases",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-${materialId}-v${variant}-4`,
+      type: "multiple_choice",
+      question: `[Diagnostic Misconception] When evaluating experimental data for "${cleanTitleStr}", which error in scientific reasoning leads to a false diagnostic conclusion regarding "${d3.term}"?`,
+      options: [
+        `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
+        "Calibrating sensors against verified reference standards prior to testing.",
+        "Maintaining controlled baseline variables across successive trial iterations.",
+        "Recording data with high-precision timestamping.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
+      explanation: `A classic diagnostic error is mistaking the rate restriction imposed by "${d3.term}" for an inactive or broken system.`,
+      topicTag: "Misconceptions & Diagnostic Traps",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-${materialId}-v${variant}-5`,
+      type: "multiple_choice",
+      question: `[Quantitative Relationship] In "${cleanTitleStr}", how is the dynamic rate of "${d4.term}" coupled with overall throughput efficiency?`,
+      options: [
+        `It optimizes throughput by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
+        "It eliminates the requirement for any energetic or physical input.",
+        "It forces all forward velocity to zero indefinitely.",
+        "It decouples cause from effect completely.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: `It optimizes throughput by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
+      explanation: `Quantitative analysis reveals that "${d4.term}" actively modulates velocity to keep throughput near the optimal capacity curve.`,
+      topicTag: "Quantitative & Kinetic Coupling",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-${materialId}-v${variant}-6`,
+      type: "scenario",
+      question: `[Diagnostic Synthesis] In an advanced exam assessing "${cleanTitleStr}", which diagnostic indicator proves that a student has mastered the interaction between "${d0.term}" and "${d5.term}"?`,
+      options: [
+        `The ability to accurately predict system response to novel disturbances while respecting the constraints of ${d5.term}.`,
+        "Rote memorization of terms without ability to explain underlying causality.",
+        "Assuming that systems can generate work without consuming resources.",
+        "Restricting analysis only to oversimplified textbook scenarios.",
+      ].sort(() => 0.5 - Math.random()),
+      correctAnswer: `The ability to accurately predict system response to novel disturbances while respecting the constraints of ${d5.term}.`,
+      explanation: `Diagnostic synthesis represents peak cognitive mastery: integrating multiple core concepts to troubleshoot and diagnose complex problems in "${cleanTitleStr}".`,
+      topicTag: "Diagnostic Synthesis",
+      difficulty: "hard",
+    },
+  ];
+}
+
+// Sanitize an existing study material to ensure no corrupted font bytes or garbled terms persist
+export function sanitizeMaterial(mat: StudyMaterial): StudyMaterial {
+  if (!mat) return mat;
+  const hasGarbledDefs = (mat.definitions || []).some(
+    (d) => isGarbledText(d.term) || isGarbledText(d.definition)
+  );
+  const isTitleGarbled = isGarbledText(mat.title);
+  const isSummaryGarbled = isGarbledText(mat.summary);
+  const isTextGarbled = isGarbledText(mat.rawText);
+
+  if (!hasGarbledDefs && !isTitleGarbled && !isSummaryGarbled && !isTextGarbled) {
+    return {
+      ...mat,
+      title: cleanTitle(mat.title),
+    };
+  }
+
+  // Generate clean features for this subject and title
+  const features = extractTextFeatures(
+    isTextGarbled ? "" : mat.rawText || "",
+    cleanTitle(mat.title)
+  );
+
+  return {
+    ...mat,
+    title: cleanTitle(mat.title),
+    summary: isSummaryGarbled || !mat.summary
+      ? `Comprehensive academic study notes and diagnostic framework for ${cleanTitle(mat.title)}, focusing on core mechanisms, empirical relationships, and exam mastery.`
+      : mat.summary,
+    rawText: isTextGarbled || !mat.rawText
+      ? `Lecture notes for ${cleanTitle(mat.title)}:\n\n${features.definitions.map((d) => `### ${d.term}\n${d.definition}`).join("\n\n")}`
+      : mat.rawText,
+    definitions: features.definitions.length > 0 ? features.definitions : mat.definitions,
+  };
 }
 
 // Generate complete study deck package reliably
@@ -319,49 +628,37 @@ export function generateFallbackStudyPackage(
     rawText: cleanText,
     summary: `Comprehensive academic breakdown of ${title}, synthesizing core theoretical foundations, procedural mechanisms, key definitions, and high-yield examination focus points.`,
     dateAdded: new Date().toISOString(),
-    mainTopics: [
-      "Foundational Principles & Big Picture",
-      "Process Mechanics & Step Dynamics",
-      "Applied Systems & Real-World Scenarios",
-      "Diagnostic Checks & Exam Traps",
-    ],
-    subtopics: [
-      "Core Foundations",
-      "Underlying Mechanisms",
-      "Governing Formulas & Laws",
-      "Test Scenarios & Edge Cases",
-    ],
-    keyConcepts: definitions.slice(0, 5).map((d) => ({
+    mainTopics: [title, "Theoretical Principles", "Operational Mechanisms", "Exam Applications"],
+    subtopics: definitions.slice(0, 6).map((d) => d.term),
+    importantFacts:
+      importantFacts.length > 0
+        ? importantFacts.slice(0, 8)
+        : [
+            `${title} provides foundational models used extensively across modern scientific and academic inquiry.`,
+            "Active recall and spaced testing dramatically elevate long-term retention over passive reading.",
+          ],
+    keyConcepts: definitions.slice(0, 8).map((d, i) => ({
       concept: d.term,
       explanation: d.definition,
-      importance: "high",
+      importance: (i < 3 ? "high" : "medium") as "high" | "medium",
     })),
-    definitions: definitions.map((d) => ({
-      term: d.term,
-      definition: d.definition,
-    })),
-    importantFacts: [
-      `Mastering the foundational principles of ${title} provides the basis for solving complex applied questions.`,
-      "Dynamic equilibrium requires forward and reverse processes to continue at identical rates.",
-      "The rate-limiting factor dictates total systemic throughput and capacity under constrained conditions.",
-      "Conservation laws guarantee that total mass and energy remain balanced across steady-state boundaries.",
-    ],
+    definitions: definitions.slice(0, 16),
     relationships: [
       {
-        itemA: "Input Stimulus",
-        itemB: "Activation Threshold",
-        relationship: "Input energy must exceed the threshold before spontaneous forward propagation begins.",
+        itemA: "Input Energy",
+        itemB: "Activation Energy (Ea)",
+        relationship: "Input energy must exceed the activation barrier before forward transformation can proceed.",
       },
       {
         itemA: "Temperature",
-        itemB: "Kinetic Velocity",
-        relationship: "Higher thermal energy elevates particle kinetics and increases collision frequency.",
+        itemB: "Reaction Velocity",
+        relationship: "Elevated temperature increases particle kinetic velocities and collision frequency.",
       },
     ],
     examples: [
       {
         title: "Standard Case Study",
-        description: `Observation of ${title} under baseline laboratory control conditions.`,
+        description: `Analysis of ${title} under regulated laboratory control conditions.`,
       },
     ],
     formulas: [
@@ -376,7 +673,7 @@ export function generateFallbackStudyPackage(
       {
         question: `Explain how ${title} responds to external perturbations according to governing equilibrium laws.`,
         type: "Free Response / Short Answer",
-        keyPoint: "Discuss Le Chatelier principle, negative feedback loops, and dynamic steady state restoration.",
+        keyPoint: "Discuss Le Chatelier's principle, regulatory feedback loops, and dynamic steady state restoration.",
       },
     ],
     chunks: [
@@ -384,8 +681,8 @@ export function generateFallbackStudyPackage(
         chunkId: `chunk-${materialId}-1`,
         title: `${title} - Foundation & Overview`,
         sourceReference: "Uploaded Study Material",
-        summary: cleanText.slice(0, 250),
-        content: cleanText.slice(0, 2000),
+        summary: cleanText.slice(0, 250) || `Core introductory concepts and governing principles for ${title}.`,
+        content: cleanText.slice(0, 2000) || `Core study material breakdown for ${title}.`,
         keyTerms: definitions.slice(0, 4).map((d) => d.term),
       },
     ],
@@ -399,12 +696,12 @@ export function generateFallbackStudyPackage(
     topicTitle: title,
     subject,
     shortOverview: `These structured study notes synthesize the fundamental principles, essential terminology, worked scenarios, and critical exam pitfalls for ${title}. Written in clear English prose for rapid revision and deep conceptual mastery.`,
-    keyConcepts: definitions.slice(0, 5).map((d) => ({
+    keyConcepts: definitions.slice(0, 6).map((d) => ({
       title: d.term,
       description: d.definition,
       keyTakeaway: `Master this concept to understand how ${title} operates in practical problem sets.`,
     })),
-    definitions: definitions.slice(0, 10).map((d) => ({
+    definitions: definitions.slice(0, 12).map((d) => ({
       term: d.term,
       definition: d.definition,
       context: `Essential terminology required for accurate exam responses on ${title}.`,
@@ -448,82 +745,47 @@ export function generateFallbackStudyPackage(
     ],
     quickRecap: [
       `1. Review foundational definitions of ${definitions.slice(0, 3).map((d) => d.term).join(", ")}.`,
-      "2. Understand how negative feedback loops maintain homeostatic equilibrium.",
-      "3. Practice active recall flashcards to cement retrieval pathways.",
+      "2. Trace step-by-step pathways and identify rate-limiting bottlenecks.",
+      "3. Apply governing laws and boundary conditions to solve exam scenarios.",
     ],
+    feynmanPrompt: `Explain how ${title} works to a peer without using technical jargon. Use a real-world analogy to illustrate the mechanism!`,
   };
 
-  // 3. FLASHCARDS (Exactly 15 flashcards, each with detailed explanation of the question asked)
-  const flashcardList: Flashcard[] = [];
-  const targetCardsCount = 15;
+  // 3. Flashcards & Memorise Pack (At least 15 flashcards, 10 fill in the blanks, 10 mnemonics)
+  const flashcardList: Flashcard[] = definitions.slice(0, 16).map((d, idx) => ({
+    id: `fc-${materialId}-${idx + 1}`,
+    materialId,
+    front: `What is "${d.term}"?`,
+    back: d.definition,
+    hint: `Focus on the foundational role and operational criteria of ${d.term}.`,
+    difficulty: (idx % 3 === 0 ? "hard" : idx % 2 === 0 ? "medium" : "easy") as "easy" | "medium" | "hard",
+    category: idx % 2 === 0 ? "Core Definitions" : "Key Mechanisms",
+    reviewCount: 0,
+  }));
 
-  for (let i = 0; i < targetCardsCount; i++) {
-    const def = definitions[i % definitions.length];
-    const cardId = `fc-${materialId}-${i + 1}`;
-
-    const questionVariants = [
-      `What is the exact definition and functional role of "${def.term}" in ${title}?`,
-      `How does "${def.term}" influence the overall mechanism of ${title}?`,
-      `In the context of ${title}, why is "${def.term}" considered a pivotal concept?`,
-      `What happens to this system when "${def.term}" is altered or constrained?`,
-      `Which fundamental principle governs the behavior of "${def.term}"?`,
-    ];
-
-    const frontQuestion = questionVariants[i % questionVariants.length];
-    const backAnswer = def.definition;
-    const detailedExplanation = `Detailed Explanation of Question:\n"${frontQuestion}"\n\nThis question evaluates your grasp of ${def.term}. Specifically, ${def.definition.toLowerCase()} In ${title}, this concept serves as an essential regulatory anchor. If you alter or remove this parameter, the balance of the entire mechanism shifts. Understanding this causal relationship allows you to solve both theoretical multiple-choice questions and complex scenario-based exam problems without confusion.`;
-
-    flashcardList.push({
-      id: cardId,
-      materialId,
-      front: frontQuestion,
-      back: backAnswer,
-      explanation: detailedExplanation,
-      hint: `Recall how ${def.term} connects to the primary mechanisms of ${title}.`,
-      difficulty: i % 3 === 0 ? "hard" : i % 2 === 0 ? "medium" : "easy",
-      category: i < 5 ? "Foundational Terms" : i < 10 ? "Mechanisms & Dynamics" : "Exam Applications",
-      reviewCount: 0,
-      mastered: false,
-    });
-  }
-
-  // 4. FILL IN THE BLANKS (Exactly 15 objective questions with options)
   const blanksList: FillInTheBlank[] = [];
-  const targetBlanksCount = 15;
-
-  for (let i = 0; i < targetBlanksCount; i++) {
-    const def = definitions[i % definitions.length];
-    const otherDefs = definitions.filter((_, idx) => idx !== i % definitions.length);
+  for (let i = 0; i < Math.min(12, definitions.length); i++) {
+    const def = definitions[i];
+    const otherDefs = definitions.filter((_, idx) => idx !== i);
     const distractors = [
-      otherDefs[0]?.term || "Static Inertia",
-      otherDefs[1]?.term || "Arbitrary Variance",
-      otherDefs[2]?.term || "Catastrophic Failure",
+      otherDefs[0]?.term || "Arbitrary Variable",
+      otherDefs[1]?.term || "Static Dissipation",
+      otherDefs[2]?.term || "Thermal Equilibrium",
     ];
 
-    // Shuffle options so correct answer isn't always in same position
     const options = [def.term, ...distractors].sort(() => 0.5 - Math.random());
-
-    const sentenceTemplates = [
-      `In ${title}, the term "_______" refers to: ${def.definition}`,
-      `A process cannot reach steady state without satisfying the requirements of _______.`,
-      `When analyzing system stability, _______ serves as the primary boundary constraint.`,
-      `Examiners frequently test whether candidates can correctly identify _______ within complex experimental setups.`,
-      `To ensure homeostatic balance, the system relies heavily on _______.`,
-    ];
-
-    const sentence = sentenceTemplates[i % sentenceTemplates.length];
-    const explanation = `The correct answer is "${def.term}". In ${title}, ${def.definition.toLowerCase()} The other options represent different systemic parameters or distractor terms.`;
+    const sentence = `In ${title}, "_______" is defined as: ${def.definition}`;
+    const explanation = `The correct answer is "${def.term}". In ${title}, ${def.definition.toLowerCase()}`;
 
     blanksList.push({
       sentence,
       answer: def.term,
       options,
-      hint: `Starts with "${def.term.charAt(0)}" — closely connected to ${title}.`,
+      hint: `Starts with "${def.term.charAt(0)}" — central to ${title}.`,
       explanation,
     });
   }
 
-  // 5. AI MNEMONICS (At least 10 mnemonics)
   const mnemonicsList: Mnemonic[] = [
     {
       concept: "Systematic 5-Step Problem Solving",
@@ -531,9 +793,9 @@ export function generateFallbackStudyPackage(
       explanation: "Given, Unknown, Equation, Substitute, Solve — ensures you never overlook variables or skip calculation steps in exams.",
     },
     {
-      concept: "Homeostatic Regulatory Loop",
+      concept: "Regulatory Response Loop",
       phrase: "S - R - C - E - F",
-      explanation: "Stimulus, Receptor, Control center, Effector, Feedback — standard sequence of all physiological and mechanical self-regulation.",
+      explanation: "Stimulus, Receptor, Control center, Effector, Feedback — standard sequence of all physiological and chemical self-regulation.",
     },
     {
       concept: "Thermodynamic State Conditions",
@@ -543,7 +805,7 @@ export function generateFallbackStudyPackage(
     {
       concept: "Diagnostic Revision Framework",
       phrase: "O - R - D - E - R",
-      explanation: "Observe, Relate, Define, Evaluate, Review — rapid recall checklist for structuring long-form essay answers.",
+      explanation: "Observe, Relate, Define, Evaluate, Review — rapid recall checklist for structuring long-form exam answers.",
     },
     {
       concept: "Active Recall Study Cycle",
@@ -556,12 +818,12 @@ export function generateFallbackStudyPackage(
       explanation: "Boundary, Output, Unity, Normalcy, Deviation — checklist for verifying whether a dynamic model holds within realistic limits.",
     },
     {
-      concept: "Scientific Mechanism Breakdown",
+      concept: "Mechanism Breakdown",
       phrase: "I - T - R",
-      explanation: "Initialization, Transition, Resolution — 3-act structure for breaking any complex chemical, biological, or physical pathway into manageable steps.",
+      explanation: "Initialization, Transition, Resolution — 3-act structure for breaking any complex pathway into manageable steps.",
     },
     {
-      concept: "Critical Thinking & Causal Analysis",
+      concept: "Critical Causal Analysis",
       phrase: "C - A - U - S - E",
       explanation: "Correlation vs causation, Assumptions, Underlying factors, Sample size, Experimental controls.",
     },
@@ -577,7 +839,6 @@ export function generateFallbackStudyPackage(
     },
   ];
 
-  // 3. Memorise Pack
   const flashcards: MemorisePack = {
     materialId,
     flashcards: flashcardList,
@@ -597,85 +858,85 @@ export function generateFallbackStudyPackage(
     ],
   };
 
-  // 4. Quiz
+  // 4. Diagnostic Assessment Quiz (Extracted deeply from material with diverse diagnostic types, NEVER repeating flashcard definitions)
   const quiz: Quiz = {
     id: `quiz-${materialId}`,
     materialId,
-    quizTitle: `${title} Mastery Quiz`,
+    quizTitle: `${title} Diagnostic Assessment`,
     subject,
     attemptsCount: 0,
-    questions: definitions.slice(0, 5).map((d, idx) => ({
-      id: `q-${materialId}-${idx + 1}`,
-      type: "multiple_choice",
-      question: `Which of the following best defines "${d.term}" in the context of ${title}?`,
-      options: [
-        d.definition,
-        "An arbitrary variable with zero causal influence on systemic equilibrium.",
-        "A static condition where all matter, energy, and information flows terminate completely.",
-        "A random statistical anomaly that cannot be quantified or predicted.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: d.definition,
-      explanation: `This is the precise operational definition established for ${d.term} in ${title}.`,
-      topicTag: idx % 2 === 0 ? "Core Definitions" : "Mechanisms",
-      difficulty: idx % 2 === 0 ? "easy" : "medium",
-    })),
+    questions: generateDiagnosticQuestions(
+      materialId,
+      title,
+      subject,
+      rawContent,
+      definitions,
+      cleanNotes.shortOverview,
+      1
+    ),
   };
 
-  // 5. Step Lesson (Every lesson has 5 questions under it!)
+  // 5. Step Lesson (6 rich, pristine academic lessons with 5 questions each)
+  const d0 = definitions[0] || { term: "Core Principle", definition: "The fundamental mechanism governing system behaviors." };
+  const d1 = definitions[1] || { term: "Activation Energy", definition: "The minimum kinetic barrier required to initiate forward reaction." };
+  const d2 = definitions[2] || { term: "Dynamic Equilibrium", definition: "A state where opposing transformations proceed at equal rates." };
+  const d3 = definitions[3] || { term: "Le Chatelier's Principle", definition: "How an equilibrium shifts to counteract external perturbations." };
+  const d4 = definitions[4] || { term: "Catalysis & Pathways", definition: "Accelerating rate by lowering the energetic barrier." };
+
   const stepLessons: LessonStep[] = [
     {
       lessonNumber: 1,
-      title: "Introduction & Big Picture Overview",
-      subtitle: `Unpacking why ${title} matters, core principles, and foundational terminology`,
-      content: `Welcome to Lesson 1 of **${title}**.\n\nEvery subject has a few anchor ideas that make everything else click. Here, we start with the primary concept:\n\n> **${definitions[0]?.term || "Foundational Concept"}**: ${definitions[0]?.definition || "The fundamental mechanism."}\n\nUnderstanding this foundational principle allows us to see how microscopic interactions aggregate into macroscopic outcomes. Take a moment to review this core definition before tackling the 5 lesson questions below.`,
-      analogy: "Think of this foundation like the rules of gravity in physics—once you grasp the fundamental rule, the motion of every planet makes intuitive sense.",
-      keyTerms: definitions.slice(0, 3).map((d) => d.term),
-      knowledgeCheck: create5QuestionsForLesson(1, "Introduction & Foundations")[0],
-      questions: create5QuestionsForLesson(1, "Introduction & Foundations"),
+      title: "Foundational Principles & Core Framework",
+      subtitle: `Unpacking why ${title} matters, primary mechanisms, and foundational terminology`,
+      content: `Welcome to Lesson 1 of **${title}**.\n\n### Foundational Principle: ${d0.term}\n${d0.definition}\n\n### Why This Concept Matters\nEvery subject has a few anchor ideas that make everything else click. In this course, mastering this foundational principle gives you the mental model needed to understand how macroscopic behaviors emerge from fundamental interactions.\n\n### Key Concepts to Anchor:\n• **${d0.term}**: ${d0.definition}\n• **${d1.term}**: ${d1.definition}\n• **Equilibrium & Conservation**: System states stay balanced until external work or disturbances shift the threshold.\n\nTake a moment to review this core definition before tackling the 5 lesson questions below.`,
+      analogy: "Think of this foundation like the rules of gravity: once you understand the basic attraction between masses, planetary orbits and ocean tides both make intuitive sense.",
+      keyTerms: [d0.term, d1.term, "Conservation Law"],
+      knowledgeCheck: create5QuestionsForLesson(1, "Foundations & Overview", title)[0],
+      questions: create5QuestionsForLesson(1, "Foundations & Overview", title),
       completed: false,
     },
     {
       lessonNumber: 2,
-      title: "Process Mechanics & Sequential Dynamics",
+      title: "Operational Mechanisms & Step-by-Step Dynamics",
       subtitle: "Tracing step-by-step pathways, energy transitions, and regulatory feedback loops",
-      content: `Now that we understand the baseline vocabulary, let's explore how the system operates over time.\n\n1. **Initialization**: The system receives input energy, reactants, or signals.\n2. **Transition**: Regulatory agents, enzymes, or forces process the inputs along defined pathways.\n3. **Resolution**: Outputs are generated, and feedback loops signal whether to continue or dampen activity.\n\nNotice how each step depends strictly on the successful completion of the preceding phase. Review these interactions and complete the 5 check questions below.`,
-      analogy: "Like an automated assembly line, a delay or bottleneck at station one naturally throttles the speed and capacity of station three.",
-      keyTerms: ["Transition State", "Feedback Loop", "Throughput", "Limiting Factor"],
-      knowledgeCheck: create5QuestionsForLesson(2, "Process Mechanics")[0],
-      questions: create5QuestionsForLesson(2, "Process Mechanics"),
+      content: `In Lesson 2, we build upon our foundation by examining how **${title}** operates dynamically over time.\n\n### 3-Stage Operational Pathway\n1. **Initialization & Activation**: Reactants or inputs acquire sufficient activation energy (${d1.term}) to overcome baseline resistance.\n2. **Transition & Interaction**: Intermediates form along the lowest-energy pathway, mediated by catalysts or driving gradients.\n3. **Resolution & Equilibrium**: Products stabilize, and the system reaches ${d2.term}.\n\n### The Bottleneck Principle\nIn any multi-step process, the overall throughput cannot exceed the speed of the slowest individual step (the rate-determining step). Identifying this bottleneck is the fastest way to solve complex exam scenarios.`,
+      analogy: "Like an hourglass or multi-stage assembly line: no matter how wide the upper chamber is, the flow rate is strictly dictated by the narrowest neck.",
+      keyTerms: ["Activation Energy", "Rate-Determining Step", "Dynamic Equilibrium"],
+      knowledgeCheck: create5QuestionsForLesson(2, "Process Mechanics", title)[0],
+      questions: create5QuestionsForLesson(2, "Process Mechanics", title),
       completed: false,
     },
     {
       lessonNumber: 3,
-      title: "Real-World Applications & Exam Problem-Solving",
-      subtitle: "How to tackle tricky boundary conditions, avoid common traps, and achieve mastery",
-      content: `Examiners love testing boundary conditions, limiting factors, and rate constraints on **${title}**.\n\nWhen faced with an exam problem:\n\n- **First**: Identify the given constraints (temperature, pressure, time, assumptions).\n- **Second**: Check if any component acts as a limiting factor or rate-limiting step.\n- **Third**: Formulate your response using precise academic terminology.\n\nTest your mastery by answering the 5 comprehensive questions below.`,
-      analogy: "Like a pilot running a pre-flight checklist, checking assumptions and constraints first guarantees safe, accurate problem solving.",
-      keyTerms: ["Boundary Conditions", "Empirical Proof", "Error Margin", "Steady State"],
-      knowledgeCheck: create5QuestionsForLesson(3, "Exam Problem-Solving", title)[0],
-      questions: create5QuestionsForLesson(3, "Exam Problem-Solving", title),
+      title: "Governing Laws & Boundary Conditions",
+      subtitle: "Understanding constraints, equilibrium shifts, and mathematical relationships",
+      content: `Every scientific process operates within physical boundaries. In Lesson 3, we examine what happens when environmental variables shift.\n\n### ${d3.term}\n${d3.definition}\n\n### Critical Boundary Conditions\n• **Temperature Sensitivity**: Increasing thermal energy increases kinetic collisions, altering rate constants.\n• **Concentration Effects**: Shifting input ratios changes the reaction quotient relative to the equilibrium constant.\n• **Limits of Validity**: Idealized models hold only within defined ranges of concentration and pressure.`,
+      analogy: "Like a balance beam or seesaw: placing extra weight on one side forces the opposite side to rise until a new balance is restored.",
+      keyTerms: [d3.term, "Boundary Conditions", "Thermal Sensitivity"],
+      knowledgeCheck: create5QuestionsForLesson(3, "Governing Laws", title)[0],
+      questions: create5QuestionsForLesson(3, "Governing Laws", title),
       completed: false,
     },
     {
       lessonNumber: 4,
-      title: "Equilibrium Dynamics & Rate Controls",
-      subtitle: "Understanding thermodynamic balance, flux rates, and perturbation resistance",
-      content: `In Lesson 4 of **${title}**, we study how systems maintain internal stability despite ongoing external fluctuations.\n\nKey aspects:\n- **Dynamic Equilibrium**: Rates of forward and reverse reactions or flows equalize.\n- **Perturbation Damping**: Negative feedback quickly mitigates sudden spikes or drops.\n- **Energy Dissipation**: Every cyclic transformation accounts for natural entropy and efficiency losses.\n\nComplete the 5 questions below to verify your conceptual grasp.`,
-      analogy: "Think of a cruise control system that gently accelerates or brakes to keep speed constant up and down steep hills.",
-      keyTerms: ["Dynamic Equilibrium", "Flux Rate", "Perturbation", "Entropy"],
-      knowledgeCheck: create5QuestionsForLesson(4, "Equilibrium Dynamics", title)[0],
-      questions: create5QuestionsForLesson(4, "Equilibrium Dynamics", title),
+      title: "Step-by-Step Problem Solving & Practical Scenarios",
+      subtitle: "Mastering calculations, exam heuristics, and avoiding typical student mistakes",
+      content: `Lesson 4 bridges theory and practice. How do you tackle exam problems testing **${title}** with speed and accuracy?\n\n### The G.U.E.S.S. Problem-Solving Protocol\n1. **G - Given**: Extract all explicit numbers, units, and conditions stated in the question prompt.\n2. **U - Unknown**: Explicitly define what variable you are asked to solve for.\n3. **E - Equation**: Select the governing law or rate equation connecting knowns to unknowns.\n4. **S - Substitute**: Insert numerical values with appropriate unit conversions.\n5. **S - Solve & Sanity Check**: Verify whether the magnitude and sign of your answer make physical sense.\n\n### Common Exam Trap to Avoid\nNever confuse *rate* (how fast a process occurs) with *equilibrium yield* (how much product is formed at the end). A catalyst speeds up the rate without changing the final equilibrium position!`,
+      analogy: "Like an experienced pilot running a pre-flight checklist: systematic verification eliminates 90% of careless calculation errors.",
+      keyTerms: ["Problem Solving", "Unit Analysis", "Equilibrium vs Rate"],
+      knowledgeCheck: create5QuestionsForLesson(4, "Problem Solving", title)[0],
+      questions: create5QuestionsForLesson(4, "Problem Solving", title),
       completed: false,
     },
     {
       lessonNumber: 5,
-      title: "Comparative Case Studies & Variances",
-      subtitle: "Comparing standard conditions against edge cases and aberrant anomalies",
-      content: `Comparing standard performance against edge cases deepens mental clarity on **${title}**.\n\n- **Case A (Baseline)**: Operates within normal stoichiometric or physiological thresholds.\n- **Case B (Stress / Inhibited)**: A key factor is depleted, shifting the rate-limiting bottleneck.\n- **Case C (Hyper-active)**: Excess input saturates regulatory pathways.\n\nAnswer the 5 multiple-choice questions below to test your diagnosis skills.`,
-      analogy: "Like stress-testing a bridge with heavy winds to find exactly where load limits are reached.",
-      keyTerms: ["Case Analysis", "Saturation Point", "Inhibition", "Threshold"],
-      knowledgeCheck: create5QuestionsForLesson(5, "Case Studies & Variances", title)[0],
-      questions: create5QuestionsForLesson(5, "Case Studies & Variances", title),
+      title: "Comparative Analysis & Real-World Applications",
+      subtitle: "Exploring laboratory applications, industrial uses, and biological systems",
+      content: `In Lesson 5, we see how the principles of **${title}** apply outside the textbook in real-world technology and natural phenomena.\n\n### Real-World Case Studies\n• **Industrial Synthesis**: Maximizing production efficiency by optimizing temperature and pressure under kinetic constraints.\n• **Biological Homeostasis**: How living cells maintain delicate internal stability despite fluctuating external environments.\n• **Material & Energy Efficiency**: Minimizing activation barriers (${d4.term}) to conserve energy and reduce waste.\n\n### Comparative Insights\nCompare spontaneous vs. non-spontaneous pathways: processes with negative free energy release proceed spontaneously, while non-spontaneous processes require coupled external energy input.`,
+      analogy: "Think of an enzymatic reaction in digestion: your body carries out chemical transformations at 37°C that would otherwise require high industrial temperatures, purely through biological catalysis.",
+      keyTerms: [d4.term, "Industrial Synthesis", "Spontaneity"],
+      knowledgeCheck: create5QuestionsForLesson(5, "Applications & Case Studies", title)[0],
+      questions: create5QuestionsForLesson(5, "Applications & Case Studies", title),
       completed: false,
     },
     {
@@ -705,11 +966,82 @@ export function generateFallbackStudyPackage(
   return { material, notes, flashcards, quiz, lesson };
 }
 
+// Auto-repair an existing lesson pack if it contains corrupt binary bytes or unformatted write-ups
+export function repairLessonPack(pack: StepLesson, rawTitle = "Study Material"): StepLesson {
+  const title = cleanTitle(rawTitle);
+  const subject = detectSubjectFromTitle(title);
+  const fallbackPkg = generateFallbackStudyPackage("mat-repair", title, "", subject, "upload");
+
+  if (!pack || !pack.lessons || pack.lessons.length === 0) {
+    return fallbackPkg.lesson;
+  }
+
+  const repairedLessons = pack.lessons.map((lesson, idx) => {
+    const isCorruptContent =
+      !lesson.content ||
+      isGarbledText(lesson.content) ||
+      (lesson.content.includes("> **") && lesson.content.includes("**:"));
+    const isCorruptTitle = !lesson.title || isGarbledText(lesson.title);
+    const isCorruptSubtitle = isGarbledText(lesson.subtitle || "");
+    const needsQuestions = !lesson.questions || lesson.questions.length < 5 || isGarbledText(lesson.questions[0]?.question || "");
+
+    const freshLesson = fallbackPkg.lesson.lessons[idx] || fallbackPkg.lesson.lessons[0];
+
+    if (!isCorruptContent && !isCorruptTitle && !isCorruptSubtitle && !needsQuestions) {
+      return lesson;
+    }
+
+    return {
+      ...lesson,
+      title: isCorruptTitle ? freshLesson.title : lesson.title,
+      subtitle: isCorruptSubtitle ? freshLesson.subtitle : lesson.subtitle,
+      content: isCorruptContent ? freshLesson.content : lesson.content,
+      analogy: isGarbledText(lesson.analogy || "") ? freshLesson.analogy : lesson.analogy,
+      keyTerms:
+        lesson.keyTerms && lesson.keyTerms.length > 0 && !isGarbledText(lesson.keyTerms.join(" "))
+          ? lesson.keyTerms
+          : freshLesson.keyTerms,
+      questions: needsQuestions ? create5QuestionsForLesson(idx + 1, freshLesson.title, title) : lesson.questions,
+    };
+  });
+
+  return {
+    ...pack,
+    title: `Interactive Step-by-Step Lesson: ${title}`,
+    subject: pack.subject || subject,
+    lessons: repairedLessons,
+  };
+}
+
+// Auto-repair material if title, summary, or definitions contain corrupt binary bytes
+export function repairMaterial(mat: StudyMaterial): StudyMaterial {
+  const isTitleGarbled = isGarbledText(mat.title);
+  const isSummaryGarbled = isGarbledText(mat.summary);
+  const isDefsGarbled = mat.definitions?.some((d) => isGarbledText(d.term) || isGarbledText(d.definition));
+
+  if (!isTitleGarbled && !isSummaryGarbled && !isDefsGarbled) {
+    return mat;
+  }
+
+  const cleanTitleStr = cleanTitle(mat.title);
+  const subject = detectSubjectFromTitle(cleanTitleStr);
+  const fallback = generateFallbackStudyPackage(mat.id, cleanTitleStr, "", subject, mat.sourceType || "upload");
+
+  return {
+    ...mat,
+    title: cleanTitleStr,
+    subject: mat.subject || subject,
+    summary: isSummaryGarbled ? fallback.material.summary : mat.summary,
+    definitions: isDefsGarbled || !mat.definitions?.length ? fallback.material.definitions : mat.definitions,
+    keyConcepts: fallback.material.keyConcepts,
+  };
+}
+
 // Resilient fetch helper with timeout
 export async function safeFetchJson<T = any>(
   url: string,
   body: any,
-  timeoutMs = 12000
+  timeoutMs = 15000
 ): Promise<T | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);

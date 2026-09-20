@@ -18,6 +18,10 @@ import {
   ArrowRight,
   Trash2,
   UserMinus,
+  Paperclip,
+  BookOpen,
+  FileText,
+  X,
 } from "lucide-react";
 import { StudySubject, GroupMember } from "../types";
 import { searchPeersByPhone } from "../data/registeredPeers";
@@ -37,12 +41,14 @@ export const GroupsView: React.FC = () => {
     materials,
     setActiveMaterial,
     setActiveTab,
+    shareMaterialWithGroup,
     user,
     triggerConfetti,
   } = useStudy();
 
   const [messageInput, setMessageInput] = useState("");
   const [activeTabSub, setActiveTabSub] = useState<"chat" | "materials" | "members">("chat");
+  const [showShareMaterialModal, setShowShareMaterialModal] = useState(false);
 
   // Create group modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -595,6 +601,84 @@ export const GroupsView: React.FC = () => {
 
                               <p className="leading-relaxed whitespace-pre-line font-medium">{msg.text}</p>
 
+                              {/* Attachments: Shared study materials, decks, lessons */}
+                              {msg.attachments && msg.attachments.length > 0 && (
+                                <div className="mt-2.5 space-y-2">
+                                  {msg.attachments.map((att, idx) => {
+                                    const linkedMat = materials.find((m) => m.id === att.linkId);
+                                    return (
+                                      <div
+                                        key={idx}
+                                        className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                                          isSelf
+                                            ? "bg-white/10 border-white/20 text-white"
+                                            : "bg-slate-50 border-slate-200 text-[#0A1931]"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <div
+                                            className={`p-1.5 rounded-lg shrink-0 ${
+                                              isSelf ? "bg-white/20 text-white" : "bg-blue-100 text-blue-700"
+                                            }`}
+                                          >
+                                            <BookOpen className="w-4 h-4" />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="font-bold text-xs truncate">{att.title}</p>
+                                            <p
+                                              className={`text-[10px] ${
+                                                isSelf ? "text-slate-200" : "text-slate-500"
+                                              }`}
+                                            >
+                                              Shared Study Deck • Ready to study
+                                            </p>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (linkedMat) {
+                                                setActiveMaterial(linkedMat);
+                                                setActiveTab("learn");
+                                              } else {
+                                                setActiveTab("library");
+                                              }
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                                              isSelf
+                                                ? "bg-white text-[#0A1931] hover:bg-slate-100 shadow-2xs"
+                                                : "bg-[#0A1931] text-white hover:bg-[#1B2A4A] shadow-2xs"
+                                            }`}
+                                          >
+                                            Study Lesson
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (linkedMat) {
+                                                setActiveMaterial(linkedMat);
+                                                setActiveTab("memorise");
+                                              } else {
+                                                setActiveTab("library");
+                                              }
+                                            }}
+                                            className={`px-2 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                                              isSelf
+                                                ? "border-white/30 text-white hover:bg-white/10"
+                                                : "border-slate-300 text-slate-700 hover:bg-slate-100"
+                                            }`}
+                                          >
+                                            Flashcards
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
                               {/* Emoji Reactions */}
                               <div className="flex items-center gap-1.5 mt-2 pt-1 border-t border-slate-200/40">
                                 {["👍", "🧠", "🔥", "💡"].map((emoji) => (
@@ -616,11 +700,20 @@ export const GroupsView: React.FC = () => {
                     )}
                   </div>
 
-                  {/* Chat Input Bar */}
+                  {/* Chat Input Bar with Share Material button */}
                   <form
                     onSubmit={handleSendMessage}
                     className="p-3 border-t border-slate-200 bg-white flex items-center gap-2"
                   >
+                    <button
+                      type="button"
+                      onClick={() => setShowShareMaterialModal(true)}
+                      className="p-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-[#0A1931] transition cursor-pointer shrink-0 flex items-center gap-1.5 text-xs font-bold"
+                      title="Share a study deck or material with this group"
+                    >
+                      <Paperclip className="w-4 h-4 text-[#0A1931]" />
+                      <span className="hidden sm:inline">Share Material</span>
+                    </button>
                     <input
                       type="text"
                       value={messageInput}
@@ -630,7 +723,7 @@ export const GroupsView: React.FC = () => {
                     />
                     <button
                       type="submit"
-                      className="p-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white transition shadow-xs cursor-pointer"
+                      className="p-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white transition shadow-xs cursor-pointer shrink-0"
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -641,9 +734,21 @@ export const GroupsView: React.FC = () => {
               {/* TAB: SHARED MATERIALS */}
               {activeTabSub === "materials" && (
                 <div className="p-6 space-y-4 flex-1 bg-white">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-[#0A1931]">Materials Shared with Group</h3>
-                    <span className="text-xs text-[#1B2A4A]/60">Collaborative Review</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold text-[#0A1931]">Materials Shared with Group</h3>
+                      <p className="text-xs text-[#1B2A4A]/60">
+                        Collaborative study decks, lecture notes, and flashcard sets
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setShowShareMaterialModal(true)}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer self-start sm:self-auto shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Share Material to Group</span>
+                    </button>
                   </div>
 
                   {materials.length === 0 ? (
@@ -865,7 +970,7 @@ export const GroupsView: React.FC = () => {
                           </div>
 
                           {/* Delete friend from group button */}
-                          {member.role !== "admin" && member.id !== user.id && (
+                          {member.id !== user.id && (
                             <button
                               type="button"
                               onClick={() => handleDeleteMemberFromGroup(member.id, member.name)}
@@ -1060,6 +1165,103 @@ export const GroupsView: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SHARE MATERIAL WITH GROUP MODAL */}
+      {showShareMaterialModal && currentGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="text-sm font-extrabold text-[#0A1931] flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-blue-600" />
+                  <span>Share Study Material with Group</span>
+                </h3>
+                <p className="text-[11px] text-[#1B2A4A]/70 mt-0.5">
+                  Send any deck to <span className="font-bold text-[#0A1931]">"{currentGroup.name}"</span> so your friends can study and take quizzes together!
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShareMaterialModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {materials.length === 0 ? (
+              <div className="py-8 text-center space-y-3">
+                <FileText className="w-8 h-8 text-slate-400 mx-auto" />
+                <p className="text-xs font-bold text-[#0A1931]">No study materials in your library yet</p>
+                <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
+                  Upload lecture notes, a syllabus, or a PDF first to share it with your study group!
+                </p>
+                <button
+                  onClick={() => {
+                    setShowShareMaterialModal(false);
+                    setActiveTab("library");
+                  }}
+                  className="px-4 py-2 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-xs font-bold transition shadow-2xs cursor-pointer"
+                >
+                  Go to Library
+                </button>
+              </div>
+            ) : (
+              <div className="overflow-y-auto space-y-2.5 flex-1 pr-1">
+                {materials.map((m) => {
+                  const isAlreadyShared = currentGroup.sharedMaterialIds?.includes(m.id);
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3.5 rounded-xl border border-slate-200 hover:border-[#0A1931]/30 transition bg-slate-50/50 flex items-center justify-between gap-3 shadow-2xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[9px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
+                            {m.subject}
+                          </span>
+                          {isAlreadyShared && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
+                              <Check className="w-2.5 h-2.5" /> Shared
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-xs font-bold text-[#0A1931] truncate mt-1">{m.title}</h4>
+                        <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">
+                          {m.summary || `${m.definitions?.length || 10} flashcards & study notes`}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          shareMaterialWithGroup(currentGroup.id, m.id);
+                          setShowShareMaterialModal(false);
+                          setActiveTabSub("chat");
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-xs font-bold transition cursor-pointer shadow-2xs shrink-0 flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{isAlreadyShared ? "Resend to Chat" : "Share into Group"}</span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="pt-3 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowShareMaterialModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

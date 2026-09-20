@@ -13,19 +13,6 @@ import {
   X,
   ShieldCheck,
 } from "lucide-react";
-import { StudySubject } from "../types";
-
-const ALL_SUBJECTS: StudySubject[] = [
-  "Biology",
-  "Mathematics",
-  "Chemistry",
-  "Physics",
-  "History",
-  "Computer Science",
-  "English",
-  "Business",
-  "Psychology",
-];
 
 export const OnboardingModal: React.FC = () => {
   const {
@@ -48,11 +35,6 @@ export const OnboardingModal: React.FC = () => {
   const [educationLevel, setEducationLevel] = useState(
     user.educationLevel || "Undergraduate (Year 1-4)"
   );
-  const [selectedSubjects, setSelectedSubjects] = useState<StudySubject[]>(
-    user.enrolledSubjects && user.enrolledSubjects.length > 0
-      ? user.enrolledSubjects
-      : ["Biology", "Chemistry"]
-  );
 
   // Sync state if user changes
   useEffect(() => {
@@ -62,7 +44,6 @@ export const OnboardingModal: React.FC = () => {
       setInstitution(user.institution || "Stanford University");
       setEducationLevel(user.educationLevel || "Undergraduate (Year 1-4)");
       if (user.phoneNumber) {
-        // extract country code if present
         const parts = user.phoneNumber.split(" ");
         if (parts.length > 1 && parts[0].startsWith("+")) {
           setPhoneCountryCode(parts[0]);
@@ -78,16 +59,6 @@ export const OnboardingModal: React.FC = () => {
 
   if (!isOpen) return null;
 
-  const toggleSubject = (s: StudySubject) => {
-    if (selectedSubjects.includes(s)) {
-      if (selectedSubjects.length > 1) {
-        setSelectedSubjects(selectedSubjects.filter((x) => x !== s));
-      }
-    } else {
-      setSelectedSubjects([...selectedSubjects, s]);
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPhone = localPhone.trim()
@@ -100,7 +71,6 @@ export const OnboardingModal: React.FC = () => {
       phoneNumber: cleanPhone,
       institution: institution.trim() || "Stanford University",
       educationLevel,
-      enrolledSubjects: selectedSubjects,
     };
 
     if (!isOnboarded) {
@@ -268,33 +238,6 @@ export const OnboardingModal: React.FC = () => {
               <option value="Graduate / Medical / Law">Graduate / Medical / Law</option>
               <option value="Professional & Lifelong Learner">Professional & Lifelong Learner</option>
             </select>
-          </div>
-
-          {/* Subjects Selection */}
-          <div>
-            <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
-              Core Study Subjects
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ALL_SUBJECTS.map((s) => {
-                const isSelected = selectedSubjects.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggleSubject(s)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1.5 ${
-                      isSelected
-                        ? "bg-[#0A1931] text-white shadow-2xs"
-                        : "bg-slate-100 hover:bg-slate-200 text-[#0A1931] border border-slate-200"
-                    }`}
-                  >
-                    <span>{s}</span>
-                    {isSelected && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Action Buttons */}

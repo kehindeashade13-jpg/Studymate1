@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import {
   UserProfile,
@@ -19,7 +19,7 @@ import {
   RepetitionRating,
   SourceType,
 } from "../types";
-import { cleanTitle } from "../utils/studyTransformer";
+import { cleanTitle, sanitizeMaterial, isGarbledText, generateDiagnosticQuestions } from "../utils/studyTransformer";
 import {
   initialUser,
   initialMaterials,
@@ -107,7 +107,14 @@ interface StudyContextType {
   addMemberToGroup: (groupId: string, member: GroupMember) => void;
   removeMemberFromGroup: (groupId: string, memberId: string) => void;
   groupMessages: Record<string, GroupMessage[]>;
-  sendGroupMessage: (groupId: string, text: string, isAi?: boolean) => void;
+  sendGroupMessage: (
+    groupId: string,
+    text: string,
+    isAi?: boolean,
+    attachments?: GroupMessage["attachments"],
+    senderOverride?: { id: string; name: string; avatar: string }
+  ) => void;
+  shareMaterialWithGroup: (groupId: string, materialId: string) => void;
   togglePinMessage: (groupId: string, messageId: string) => void;
   reactToMessage: (groupId: string, messageId: string, emoji: string) => void;
 
@@ -199,7 +206,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map((m: StudyMaterial) => ({ ...m, title: cleanTitle(m.title) }));
+          return parsed.map((m: StudyMaterial) => sanitizeMaterial(m));
         }
       }
       return initialMaterials;
@@ -217,7 +224,29 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         localStorage.removeItem("studymate_notes");
         return {};
       }
-      return saved ? JSON.parse(saved) : initialNotes;
+      if (saved) {
+        const parsed: Record<string, StudyNotes> = JSON.parse(saved);
+        const cleaned: Record<string, StudyNotes> = {};
+        for (const [id, n] of Object.entries(parsed)) {
+          if (n && Array.isArray(n.definitions) && n.definitions.some((d) => isGarbledText(d.term) || isGarbledText(d.definition))) {
+            const correspondingMat = materials.find((m) => m.id === id);
+            const defs = correspondingMat?.definitions || [];
+            cleaned[id] = {
+              ...n,
+              topicTitle: cleanTitle(n.topicTitle),
+              definitions: defs.map((d) => ({
+                term: d.term,
+                definition: d.definition,
+                context: `Core concept in ${cleanTitle(n.topicTitle)}.`,
+              })),
+            };
+          } else {
+            cleaned[id] = n;
+          }
+        }
+        return cleaned;
+      }
+      return initialNotes;
     } catch {
       return initialNotes;
     }
@@ -384,49 +413,164 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.removeItem("studymate_plan");
   };
 
-  // Sync to local storage
+  // ========================================================
+  // PERSISTENT ACCOUNT STORAGE: FILES SAVED PERMANENTLY
+  // ========================================================
+  const isServerLoaded = useRef(false);
+
+  // 1. Load persistent user data from the server on startup
   useEffect(() => {
-    localStorage.setItem("studymate_user", JSON.stringify(user));
+    let isMounted = true;
+    async function loadServerStorage() {
+      try {
+        const userId = user?.id || user?.email || "default_user";
+        const res = await fetch(`/api/storage/load?userId=${encodeURIComponent(userId)}`);
+        const json = await res.json();
+        if (isMounted && json.success && json.data) {
+          const d = json.data;
+          if (Array.isArray(d.materials) && d.materials.length > 0) {
+            setMaterials(d.materials.map((m: StudyMaterial) => ({ ...m, title: cleanTitle(m.title) })));
+          }
+          if (d.notes && Object.keys(d.notes).length > 0) setNotes(d.notes);
+          if (d.memorisePacks && Object.keys(d.memorisePacks).length > 0) setMemorisePacks(d.memorisePacks);
+          if (d.quizzes && Object.keys(d.quizzes).length > 0) setQuizzes(d.quizzes);
+          if (d.lessons && Object.keys(d.lessons).length > 0) setLessons(d.lessons);
+          if (Array.isArray(d.studyGroups)) setStudyGroups(d.studyGroups);
+          if (d.groupMessages) setGroupMessages(d.groupMessages);
+          if (Array.isArray(d.friends)) setFriends(d.friends);
+          if (d.studyPlan) setStudyPlan(d.studyPlan);
+          if (d.progress) setProgress(d.progress);
+          if (Array.isArray(d.achievements)) setAchievements(d.achievements);
+          if (d.user) {
+            setUser((prev) => ({
+              ...prev,
+              ...d.user,
+              id: prev.id || d.user.id,
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load persistent data from server:", err);
+      } finally {
+        if (isMounted) {
+          isServerLoaded.current = true;
+        }
+      }
+    }
+    loadServerStorage();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Debounced background sync to server permanent storage
+  useEffect(() => {
+    if (!isServerLoaded.current) return;
+    const syncTimer = setTimeout(() => {
+      fetch("/api/storage/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user?.id || user?.email || "default_user",
+          data: {
+            materials,
+            notes,
+            memorisePacks,
+            quizzes,
+            lessons,
+            studyGroups,
+            groupMessages,
+            friends,
+            studyPlan,
+            progress,
+            achievements,
+            user,
+          },
+        }),
+      }).catch((err) => console.warn("Background server storage sync failed:", err));
+    }, 800);
+
+    return () => clearTimeout(syncTimer);
+  }, [
+    materials,
+    notes,
+    memorisePacks,
+    quizzes,
+    lessons,
+    studyGroups,
+    groupMessages,
+    friends,
+    studyPlan,
+    progress,
+    achievements,
+    user,
+  ]);
+
+  // Sync to local storage with safe error handling
+  useEffect(() => {
+    try {
+      localStorage.setItem("studymate_user", JSON.stringify(user));
+    } catch {}
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_materials", JSON.stringify(materials));
+    try {
+      localStorage.setItem("studymate_materials", JSON.stringify(materials));
+    } catch {}
   }, [materials]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_notes", JSON.stringify(notes));
+    try {
+      localStorage.setItem("studymate_notes", JSON.stringify(notes));
+    } catch {}
   }, [notes]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_memorise", JSON.stringify(memorisePacks));
+    try {
+      localStorage.setItem("studymate_memorise", JSON.stringify(memorisePacks));
+    } catch {}
   }, [memorisePacks]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_quizzes", JSON.stringify(quizzes));
+    try {
+      localStorage.setItem("studymate_quizzes", JSON.stringify(quizzes));
+    } catch {}
   }, [quizzes]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_lessons", JSON.stringify(lessons));
+    try {
+      localStorage.setItem("studymate_lessons", JSON.stringify(lessons));
+    } catch {}
   }, [lessons]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_groups", JSON.stringify(studyGroups));
+    try {
+      localStorage.setItem("studymate_groups", JSON.stringify(studyGroups));
+    } catch {}
   }, [studyGroups]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_messages", JSON.stringify(groupMessages));
+    try {
+      localStorage.setItem("studymate_messages", JSON.stringify(groupMessages));
+    } catch {}
   }, [groupMessages]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_friends", JSON.stringify(friends));
+    try {
+      localStorage.setItem("studymate_friends", JSON.stringify(friends));
+    } catch {}
   }, [friends]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_plan", JSON.stringify(studyPlan));
+    try {
+      localStorage.setItem("studymate_plan", JSON.stringify(studyPlan));
+    } catch {}
   }, [studyPlan]);
 
   useEffect(() => {
-    localStorage.setItem("studymate_progress", JSON.stringify(progress));
+    try {
+      localStorage.setItem("studymate_progress", JSON.stringify(progress));
+    } catch {}
   }, [progress]);
 
   // Trigger celebratory confetti
@@ -459,7 +603,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addMaterial = (material: StudyMaterial) => {
-    const cleaned = { ...material, title: cleanTitle(material.title) };
+    const cleaned = sanitizeMaterial(material);
     setMaterials((prev) => [cleaned, ...prev]);
     setActiveMaterial(cleaned);
     addXP(50, "Material Imported");
@@ -480,9 +624,38 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteMaterial = (id: string) => {
     setMaterials((prev) => prev.filter((m) => m.id !== id));
+    setNotes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setMemorisePacks((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setQuizzes((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setLessons((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     if (activeMaterial?.id === id) {
       setActiveMaterial(materials.find((m) => m.id !== id) || null);
     }
+    // Delete from permanent server storage
+    fetch("/api/storage/delete-material", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user?.id || user?.email || "default_user",
+        materialId: id,
+      }),
+    }).catch((err) => console.warn("Failed to delete from server storage:", err));
   };
 
   const updateMaterialProgress = (id: string, progressVal: number) => {
@@ -668,6 +841,22 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const createStudyGroup = (groupData: Partial<StudyGroup>) => {
+    const creatorMember: GroupMember = {
+      id: user.id,
+      name: `${user.name} (Admin)`,
+      avatar: user.avatar,
+      role: "admin",
+      isOnline: true,
+      studyStreak: user.streakDays || 0,
+      phoneNumber: user.phoneNumber,
+      institution: user.institution,
+    };
+
+    const initialMembers =
+      groupData.members && groupData.members.length > 0
+        ? groupData.members
+        : [creatorMember];
+
     const newGroup: StudyGroup = {
       id: `group-${Date.now()}`,
       name: groupData.name || "New Study Group",
@@ -678,16 +867,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       progressPercent: 0,
       sharedMaterialIds: groupData.sharedMaterialIds || [],
       pinnedMessage: "Welcome to our study group! Let's conquer our exams together.",
-      members: [
-        {
-          id: user.id,
-          name: `${user.name} (Admin)`,
-          avatar: user.avatar,
-          role: "admin",
-          isOnline: true,
-          studyStreak: user.streakDays,
-        },
-      ],
+      members: initialMembers,
     };
 
     setStudyGroups((prev) => [newGroup, ...prev]);
@@ -721,6 +901,21 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     addXP(25, "Added Member to Study Group");
     triggerConfetti();
+
+    // The newly added friend sends an introductory greeting
+    setTimeout(() => {
+      sendGroupMessage(
+        groupId,
+        `Hey everyone! Excited to join this study group. Looking forward to reviewing notes and practicing together! 📚✨`,
+        false,
+        undefined,
+        {
+          id: member.id,
+          name: member.name,
+          avatar: member.avatar,
+        }
+      );
+    }, 1200);
   };
 
   const removeMemberFromGroup = (groupId: string, memberId: string) => {
@@ -745,19 +940,32 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const sendGroupMessage = (groupId: string, text: string, isAi = false) => {
+  const sendGroupMessage = (
+    groupId: string,
+    text: string,
+    isAi = false,
+    attachments?: GroupMessage["attachments"],
+    senderOverride?: { id: string; name: string; avatar: string }
+  ) => {
+    const senderId = senderOverride ? senderOverride.id : isAi ? "ai-assistant" : user.id;
+    const senderName = senderOverride ? senderOverride.name : isAi ? "StudyMate AI" : user.name;
+    const senderAvatar = senderOverride
+      ? senderOverride.avatar
+      : isAi
+      ? "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80"
+      : user.avatar;
+
     const newMsg: GroupMessage = {
-      id: `msg-${Date.now()}`,
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       groupId,
-      senderId: isAi ? "ai-assistant" : user.id,
-      senderName: isAi ? "StudyMate AI" : user.name,
-      senderAvatar: isAi
-        ? "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80"
-        : user.avatar,
+      senderId,
+      senderName,
+      senderAvatar,
       timestamp: "Just now",
       text,
       isAi,
       reactions: {},
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
     };
 
     setGroupMessages((prev) => ({
@@ -765,18 +973,93 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       [groupId]: [...(prev[groupId] || []), newMsg],
     }));
 
-    // If user asked something, trigger simulated AI response if appropriate
-    if (!isAi && (text.includes("AI") || text.includes("explain") || text.includes("quiz") || text.includes("?"))) {
-      setTimeout(() => {
-        let aiReply = "Here is a quick learning insight from StudyMate AI: Keep your focus on rate-limiting steps and test yourself frequently!";
-        if (text.toLowerCase().includes("quiz")) {
-          aiReply = "🎯 **AI Quick Check**: Which enzyme cleaves cohesin during anaphase? (A) DNA Polymerase, (B) Separase, (C) Helicase, (D) Lipase. Reply with your guess!";
-        } else if (text.toLowerCase().includes("explain")) {
-          aiReply = "💡 **StudyMate AI Breakdown**: To understand this concept simply, always visualize the physical interaction before memorizing the formulas. Remember our group motto: 'Turn study materials into understanding!'";
-        }
-        sendGroupMessage(groupId, aiReply, true);
-      }, 1200);
+    // If the message was sent by the main user, allow peer friends in this group to respond!
+    if (!isAi && !senderOverride) {
+      const targetGroup = studyGroups.find((g) => g.id === groupId);
+      const peerFriends = targetGroup ? targetGroup.members.filter((m) => m.id !== user.id) : [];
+
+      if (peerFriends.length > 0) {
+        const randomFriend = peerFriends[Math.floor(Math.random() * peerFriends.length)];
+        setTimeout(() => {
+          let peerReply = `Thanks for sending this, ${user.name}! Let's review it together.`;
+          const lower = text.toLowerCase();
+          if (attachments && attachments.length > 0) {
+            peerReply = `Got it! I just opened "${attachments[0].title}". The flashcards and definitions look super helpful! 💡`;
+          } else if (lower.includes("quiz") || lower.includes("practice") || lower.includes("exam")) {
+            peerReply = `Great idea! I was just preparing for that exam. Want to do a fast round of 5 questions? 🎯`;
+          } else if (lower.includes("deck") || lower.includes("notes") || lower.includes("read")) {
+            peerReply = `Awesome notes! I'm adding this deck to my active study plan for tonight.`;
+          } else if (lower.includes("hello") || lower.includes("hey") || lower.includes("hi")) {
+            peerReply = `Hey ${user.name}! Ready to study and master these concepts.`;
+          } else if (lower.includes("?") || lower.includes("how") || lower.includes("what")) {
+            peerReply = `Good question! We can also ask our AI Tutor to break down the exact mechanism step by step.`;
+          }
+
+          sendGroupMessage(groupId, peerReply, false, undefined, {
+            id: randomFriend.id,
+            name: randomFriend.name,
+            avatar: randomFriend.avatar,
+          });
+        }, 1500);
+      }
+
+      // If user specifically asked for AI tutor assistance
+      if (text.includes("AI") || text.includes("explain")) {
+        setTimeout(() => {
+          sendGroupMessage(
+            groupId,
+            "💡 **StudyMate AI Insight**: Remember that active recall and self-quizzing retain up to 80% more than passive reading. Keep asking questions!",
+            true
+          );
+        }, 3000);
+      }
     }
+  };
+
+  const shareMaterialWithGroup = (groupId: string, materialId: string) => {
+    const mat = materials.find((m) => m.id === materialId);
+    if (!mat) return;
+
+    setStudyGroups((prev) =>
+      prev.map((g) => {
+        if (g.id === groupId) {
+          const already = g.sharedMaterialIds || [];
+          if (already.includes(materialId)) return g;
+          return {
+            ...g,
+            sharedMaterialIds: [...already, materialId],
+          };
+        }
+        return g;
+      })
+    );
+
+    setActiveGroup((prev) => {
+      if (!prev || prev.id !== groupId) return prev;
+      const already = prev.sharedMaterialIds || [];
+      if (already.includes(materialId)) return prev;
+      return {
+        ...prev,
+        sharedMaterialIds: [...already, materialId],
+      };
+    });
+
+    // Also post an automatic announcement in group chat with attachment
+    sendGroupMessage(
+      groupId,
+      `Shared a study material with the group: **${mat.title}** (${mat.subject}). Check it out in the materials tab or review it together!`,
+      false,
+      [
+        {
+          type: "material",
+          title: mat.title,
+          linkId: mat.id,
+        },
+      ]
+    );
+
+    addXP(30, "Shared Material with Group");
+    triggerConfetti();
   };
 
   const togglePinMessage = (groupId: string, messageId: string) => {
@@ -967,8 +1250,10 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActiveGroup,
         createStudyGroup,
         addMemberToGroup,
+        removeMemberFromGroup,
         groupMessages,
         sendGroupMessage,
+        shareMaterialWithGroup,
         togglePinMessage,
         reactToMessage,
         friends,

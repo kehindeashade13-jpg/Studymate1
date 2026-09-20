@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { createServer as createViteServer } from "vite";
@@ -44,10 +45,10 @@ function cleanJsonResponse(raw: string): any {
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
 const CANDIDATE_MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-flash-latest",
   "gemini-3.8-flash",
-  "gemini-2.5-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
 ];
 
 async function generateContentWithRetry(
@@ -72,7 +73,7 @@ async function generateContentWithRetry(
         config: params.config,
       });
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 12000)
+        setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 25000)
       );
       const response = await Promise.race([callPromise, timeoutPromise]);
       return response;
@@ -88,6 +89,112 @@ async function generateContentWithRetry(
   }
   throw lastError || new Error("All candidate Gemini models failed");
 }
+
+// Helper to verify that extracted text is legible academic English/symbols and not corrupted font bytes
+function isLegibleAcademicText(text: string): boolean {
+  if (!text || typeof text !== "string") return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 30) return false;
+
+  // Corrupted replacement glyphs \ufffd, boxes, or private Unicode planes
+  const replacementMatches = (trimmed.match(/[\ufffd\u25a0-\u25ff\uff00-\uffff]/g) || []).length;
+  if (replacementMatches / trimmed.length > 0.04) return false;
+
+  // Unprintable control characters (excluding tab, newline, carriage return)
+  const controlChars = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
+  if (controlChars > 3) return false;
+
+  // Check dense question mark patterns (e.g. ??(???????)
+  const questionMarks = (trimmed.match(/\?/g) || []).length;
+  if (questionMarks > 10 && questionMarks / trimmed.length > 0.12) return false;
+
+  // Check letters ratio
+  const letters = (trimmed.match(/[a-zA-Z]/g) || []).length;
+  const nonSpaces = trimmed.replace(/\s+/g, "").length;
+  if (nonSpaces === 0 || letters / nonSpaces < 0.40) return false;
+
+  // Binary stream dump detection: extremely long tokens without whitespace or hyphens
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length > 5) {
+    const excessivelyLongWords = words.filter((w) => w.length > 32 && !w.includes("-") && !w.includes("/"));
+    if (excessivelyLongWords.length / words.length > 0.10) return false;
+  }
+
+  return true;
+}
+
+// Extract clean text from uploaded PDF or document files
+app.post("/api/extract-document", async (req, res) => {
+  try {
+    const { base64, mimeType, fileName } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "Missing document data" });
+    }
+
+    const cleanBase64 = base64.replace(/^data:[^;]+;base64,/, "");
+    const buffer = Buffer.from(cleanBase64, "base64");
+
+    // 1. Try native PDF parser for PDFs, but STRICTLY validate legibility
+    const isPdf = mimeType === "application/pdf" || fileName?.toLowerCase().endsWith(".pdf");
+    if (isPdf) {
+      try {
+        const pdfModule = await import("pdf-parse");
+        const pdfFn = (pdfModule as any).default || pdfModule;
+        let candidateText = "";
+
+        if (typeof pdfFn === "function") {
+          const data = await pdfFn(buffer);
+          if (data && data.text) {
+            candidateText = data.text.trim();
+          }
+        } else if ((pdfModule as any).PDFParse) {
+          const parser = new (pdfModule as any).PDFParse({ data: buffer });
+          if (typeof parser.load === "function") {
+            await (parser as any).load();
+          }
+          const textResult = typeof parser.getText === "function" ? await (parser as any).getText() : "";
+          candidateText = typeof textResult === "string" ? textResult : ((textResult as any)?.text || "");
+        }
+
+        if (candidateText && isLegibleAcademicText(candidateText)) {
+          return res.json({ success: true, text: candidateText });
+        } else if (candidateText) {
+          console.warn("Native PDF parser returned unmapped font bytes or illegible glyphs; routing directly to Gemini OCR vision.");
+        }
+      } catch (pdfErr) {
+        console.warn("PDFParse parsing notice:", pdfErr);
+      }
+    }
+
+    // 2. High-fidelity Gemini Multimodal OCR extraction for scanned PDFs, images, or documents
+    const ai = getGeminiClient();
+    if (ai) {
+      try {
+        const response = await generateContentWithRetry(ai, {
+          contents: [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: mimeType || (isPdf ? "application/pdf" : "image/jpeg"),
+              },
+            },
+            "You are an expert academic tutor and OCR engine. Extract all readable text, titles, lecture slide content, formulas, chemical equations, definitions, and key topics from this study document in clean, natural English prose and markdown. Do not output raw binary tokens, unmapped font symbols, or corrupted characters. If any part is faint or handwritten, transcribe it accurately in standard English.",
+          ],
+        });
+        if (response?.text && isLegibleAcademicText(response.text)) {
+          return res.json({ success: true, text: response.text.trim() });
+        }
+      } catch (geminiErr: any) {
+        console.warn("Gemini document extraction notice:", geminiErr?.message);
+      }
+    }
+
+    return res.json({ success: false, text: "" });
+  } catch (err: any) {
+    console.error("Document extraction error:", err);
+    return res.status(500).json({ error: err.message || "Extraction error" });
+  }
+});
 
 // 1. Analyze study material endpoint
 app.post("/api/gemini/analyze", async (req, res) => {
@@ -1107,35 +1214,47 @@ Return ONLY a JSON object matching this schema:
   });
 });
 
-// 4. Generate AI Quiz endpoint
+// 4. Generate AI Diagnostic Quiz endpoint
 app.post("/api/gemini/generate-quiz", async (req, res) => {
-  const { title, content, questionCount = 5, questionTypes } = req.body;
-  const count = Math.min(20, Math.max(3, parseInt(questionCount) || 5));
+  const { title, content, questionCount = 6, variant = 1, excludeQuestions = [] } = req.body;
+  const count = Math.min(20, Math.max(4, parseInt(questionCount) || 6));
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
-      const prompt = `You are StudyMate AI Quiz Generator. Create a rigorous, fair, and pedagogically sound test from this study material.
-Question Count: ${count}
-Topic: ${title}
-Allowed Types: Multiple Choice, True/False, Fill-in-the-blank, Short Answer, Scenario-based.
+      const prompt = `You are StudyMate AI Senior Diagnostic Assessment Specialist.
+You must construct a comprehensive, rigorous DIAGNOSTIC ASSESSMENT consisting of ${count} questions directly and specifically extracted from the provided study document.
 
-Content:
+CRITICAL PEDAGOGICAL DIRECTIVES (STRICTLY ENFORCE):
+1. ABSOLUTELY DO NOT REPEAT FLASHCARD OR LESSON DEFINITIONS:
+   - Do NOT ask simple vocabulary questions like "What is the definition of X?" or "Which term defines Y?". Flashcards and glossary sections already cover definitions.
+2. EXTRACT DEEP, VARIED QUESTIONS DIRECTLY FROM DIFFERENT SECTIONS OF THE UPLOADED TEXT:
+   - Diagnostic Scenario / Experimental Observation: A student or researcher is observing a reaction, calculation, or system described in the document. What diagnostic indicator confirms the mechanism?
+   - Cause-and-Effect Mechanism: According to the document, what happens when condition A is altered relative to threshold B?
+   - Mathematical / Quantitative / Formula Application: A calculation or parameter relationship extracted directly from the notes (e.g. rate laws, equilibrium constants, thermodynamics, ratios).
+   - Boundary Conditions & Exceptions: What condition causes the standard rule in this lecture to fail or deviate?
+   - Misconceptions & Traps: Diagnostic question targeting the exact misconception students make on this topic.
+3. FRESH VARIATION (Variant #${variant}): Focus on diverse sub-topics across the document so this test is completely unique and different from other test runs.
+4. FOUR CONCISE, PLAUSIBLE OPTIONS: Each multiple-choice question must have 4 clear, unambiguous choices where exactly one is scientifically/academically correct according to the uploaded notes.
+5. THOROUGH DIAGNOSTIC EXPLANATION: In "explanation", explicitly explain why the correct answer is right and why the diagnostic discriminator is critical.
+
+Topic Title: ${title || "Core Subject"}
+Source Content from Uploaded File:
 """
-${content.slice(0, 12000)}
+${content.slice(0, 14000)}
 """
 
-Return ONLY a JSON object:
+Return ONLY valid JSON matching this schema:
 {
-  "quizTitle": string,
-  "topic": string,
+  "quizTitle": "${title || "Subject"} Diagnostic Assessment (Variant ${variant})",
+  "topic": "${title || "Core Foundations"}",
   "questions": [
     {
       "id": string,
-      "type": "multiple_choice" | "true_false" | "fill_blank" | "short_answer" | "scenario",
+      "type": "scenario" | "multiple_choice" | "boundary_case" | "mechanism",
       "question": string,
-      "options": string[], // for multiple_choice and true_false (e.g. ["True", "False"])
-      "correctAnswer": string, // must match one option or exact text
+      "options": string[],
+      "correctAnswer": string,
       "explanation": string,
       "topicTag": string,
       "difficulty": "easy" | "medium" | "hard"
@@ -1147,87 +1266,117 @@ Return ONLY a JSON object:
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          temperature: 0.3,
+          temperature: 0.45 + (variant % 3) * 0.1,
         },
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
-      return res.json({ success: true, data: parsed });
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length >= 3) {
+        return res.json({ success: true, data: parsed });
+      }
     } catch (err: any) {
-      console.warn("Gemini generate-quiz failed, using fallback:", err?.message);
+      console.warn("Gemini generate-quiz failed, using dynamic diagnostic generator:", err?.message);
     }
   }
 
-  // Fallback quiz
+  // Fallback diagnostic quiz tailored to title and variant
+  const subjectName = title || "Academic Study";
+  const varOffset = ((variant || 1) - 1) * 3;
+
   return res.json({
     success: true,
     data: {
-      quizTitle: `${title || "Subject Mastery"} Diagnostic Assessment`,
-      topic: title || "Core Foundations",
+      quizTitle: `${subjectName} Diagnostic Assessment (Set ${variant || 1})`,
+      topic: subjectName,
       questions: [
         {
-          id: "q-1",
-          type: "multiple_choice",
-          question: `Which of the following statements best characterizes the primary mechanism in ${title || "this subject"}?`,
+          id: `diag-q-${1 + varOffset}`,
+          type: "scenario",
+          question: `[Diagnostic Scenario] A student investigates the processes governing ${subjectName}. If the primary regulatory threshold is perturbed by 30%, which immediate diagnostic outcome indicates the system is compensating via negative feedback?`,
           options: [
-            "It functions independently of energetic or thermodynamic boundaries",
-            "It operates as a regulated process governed by rate-limiting constraints",
-            "It only produces deterministic results in completely open environments",
-            "It cannot be measured through empirical observation or quantitative metrics",
+            "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
+            "The system enters runaway exponential consumption of internal reactants",
+            "All molecular interactions and energetic exchanges halt instantaneously",
+            "The equilibrium constant permanently shifts by an arbitrary factor of ten",
           ],
-          correctAnswer: "It operates as a regulated process governed by rate-limiting constraints",
-          explanation: "All physical and biological systems obey conservation principles and are limited by activation thresholds and substrate availability.",
-          topicTag: "Mechanisms & Principles",
+          correctAnswer: "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
+          explanation: `In ${subjectName}, negative feedback acts as an autonomous stabilizing mechanism that dampens external perturbations to preserve homeostasis.`,
+          topicTag: "System Dynamics & Feedback",
           difficulty: "medium",
         },
         {
-          id: "q-2",
-          type: "true_false",
-          question: "True or False: In dynamic equilibrium, the forward and reverse reactions have completely ceased.",
-          options: ["True", "False"],
-          correctAnswer: "False",
-          explanation: "False! In dynamic equilibrium, both reactions occur at equal speeds, so macroscopic concentrations remain unchanged even though microscopic exchange continues.",
-          topicTag: "Equilibrium Dynamics",
-          difficulty: "easy",
-        },
-        {
-          id: "q-3",
-          type: "scenario",
-          question: "Scenario: An engineer observes a sudden 40% drop in throughput when input pressure increases past threshold X. What is the most plausible explanation?",
+          id: `diag-q-${2 + varOffset}`,
+          type: "mechanism",
+          question: `[Mechanism Analysis] Under what specific boundary condition does the standard rate-determining step in ${subjectName} shift to diffusion-limited kinetics?`,
           options: [
-            "A structural safety valve or negative feedback mechanism engaged to prevent catastrophic overload",
-            "Energy was spontaneously destroyed in violation of standard physics",
-            "The reaction rate became infinite and broke measuring instruments",
-            "The system converted entirely into an ideal gas",
+            "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
+            "When the temperature approaches absolute zero",
+            "When reactants are separated into completely immiscible non-polar phases",
+            "When total pressure is decreased to a perfect vacuum",
           ],
-          correctAnswer: "A structural safety valve or negative feedback mechanism engaged to prevent catastrophic overload",
-          explanation: "Negative feedback systems actively throttle inputs or dump excess pressure when safe operational limits are breached.",
-          topicTag: "Applied Systems",
+          correctAnswer: "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
+          explanation: "Diffusion control takes over when encounters between species happen slower than the reaction itself once collided.",
+          topicTag: "Rate Limits & Boundary Conditions",
           difficulty: "hard",
         },
         {
-          id: "q-4",
-          type: "fill_blank",
-          question: "Fill in the blank: The property of a system that quantifies its thermal disorder or randomness is called _______.",
-          options: ["entropy", "enthalpy", "momentum", "viscosity"],
-          correctAnswer: "entropy",
-          explanation: "Entropy (S) is the standard thermodynamic measure of molecular randomness and energy dispersion.",
-          topicTag: "Thermodynamics",
+          id: `diag-q-${3 + varOffset}`,
+          type: "boundary_case",
+          question: `[Diagnostic Trap] When interpreting experimental data from ${subjectName}, which common assumption leads to an incorrect diagnostic conclusion?`,
+          options: [
+            "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
+            "Accounting for temperature-dependent variations in the rate coefficient",
+            "Verifying mass balance across all closed boundaries",
+            "Distinguishing between macroscopic equilibrium and microscopic reversibility",
+          ],
+          correctAnswer: "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
+          explanation: "Zero-order behavior only holds while the catalyst or active site is completely saturated; once substrate drops below saturation, kinetics revert to first-order.",
+          topicTag: "Experimental Error & Misconceptions",
+          difficulty: "medium",
+        },
+        {
+          id: `diag-q-${4 + varOffset}`,
+          type: "multiple_choice",
+          question: `[Quantitative Relationship] In ${subjectName}, how does an increase in temperature affect the ratio of forward to reverse rate constants in an endothermic process?`,
+          options: [
+            "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
+            "Both rate constants decrease uniformly due to thermal disruption",
+            "The reverse rate accelerates while the forward rate remains completely frozen",
+            "The equilibrium position remains unchanged because temperature has no effect on energetic distribution",
+          ],
+          correctAnswer: "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
+          explanation: "By the van 't Hoff relationship, an endothermic process absorbs heat, so increasing temperature favors the forward pathway and elevates K.",
+          topicTag: "Thermodynamics & Kinetics Coupling",
+          difficulty: "hard",
+        },
+        {
+          id: `diag-q-${5 + varOffset}`,
+          type: "scenario",
+          question: `[Diagnostic Troubleshooting] An analytical reading in ${subjectName} displays sudden variance during continuous monitoring. What diagnostic step should be executed first?`,
+          options: [
+            "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
+            "Immediately discard all raw measurements and restart without root-cause analysis",
+            "Assume mathematical models are inapplicable to physical reality",
+            "Alter multiple experimental variables simultaneously to force a match",
+          ],
+          correctAnswer: "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
+          explanation: "Rigorous scientific diagnosis begins by isolating measurement baselines and confirming interface integrity before changing systemic variables.",
+          topicTag: "Analytical Diagnosis",
           difficulty: "easy",
         },
         {
-          id: "q-5",
-          type: "short_answer",
-          question: "What is the primary danger of conflating correlation with causation when analyzing experimental study data?",
+          id: `diag-q-${6 + varOffset}`,
+          type: "mechanism",
+          question: `[Causality Diagnostic] Which of the following best explains why catalysts in ${subjectName} accelerate reaction speed without altering the thermodynamic yield?`,
           options: [
-            "It can lead to invalid conclusions because a third confounding variable may drive both observed metrics",
-            "It automatically invalidates all statistical software programs",
-            "It guarantees that sample sizes will become negative numbers",
-            "It has no real impact on scientific validity",
+            "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
+            "They supply external chemical enthalpy directly into the products",
+            "They completely eliminate entropy changes across the entire system",
+            "They selectively suppress all reverse reaction pathways",
           ],
-          correctAnswer: "It can lead to invalid conclusions because a third confounding variable may drive both observed metrics",
-          explanation: "Correlation merely demonstrates co-movement; establishing causation requires controlled intervention and mechanism proof.",
-          topicTag: "Analytical Reasoning",
+          correctAnswer: "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
+          explanation: "Catalysts accelerate both forward and reverse reactions by the exact same proportion by lowering activation energy (Ea), leaving ΔG° and K unchanged.",
+          topicTag: "Catalysis & Energetics",
           difficulty: "medium",
         },
       ],
@@ -1598,78 +1747,116 @@ Return ONLY a JSON object:
 
 // 7. Persistent StudyMate AI Assistant & Group Chat AI
 app.post("/api/gemini/assistant", async (req, res) => {
-  const { prompt, currentMaterial, conversationHistory, contextMode } = req.body;
+  const { prompt, message, currentMaterial, studyContext, conversationHistory, history, contextMode } = req.body;
+  const userQuery = (message || prompt || "").trim();
+  const contextData = studyContext || (currentMaterial ? `Active Material: "${currentMaterial.title || "Untitled"}" (${currentMaterial.subject || "General"})\nContent: ${(currentMaterial.content || currentMaterial.summary || currentMaterial.rawText || "").slice(0, 12000)}` : "");
+  const pastChat = history || conversationHistory || [];
+
   const ai = getGeminiClient();
 
-  if (ai) {
+  if (ai && userQuery) {
     try {
-      const systemInstruction = `You are StudyMate AI, the supportive, deeply knowledgeable, and pedagogically brilliant student study partner.
-Your goal is to help students *understand, remember, practice, and collaborate* — not merely dump answers.
-When a student asks for an explanation, explain clearly with intuitive analogies and verify their comprehension.
-When in a study group chat, keep responses friendly, collaborative, and student-focused.
-If study material is provided, ground your answers in the material.`;
+      const systemInstruction = `You are StudyMate AI Tutor, a master educator and encouraging private tutor.
+The student has uploaded notes, slide decks, or textbook excerpts to StudyMate.
+Your core principles:
+1. Deep Understanding: Understand the student's query thoroughly. Break down challenging ideas into clear, intuitive steps.
+2. Direct Connection to Uploaded Material: Whenever study material or document excerpts are present in the context, explicitly reference, cite, and connect your answer to the terms, formulas, sections, and definitions in their uploaded file. Show them exactly how their notes answer the question.
+3. Detailed Explanations: Provide comprehensive, rich, and well-structured responses. Use markdown headings (###), bold text for key terms, numbered steps for mechanisms/processes, and concrete analogies.
+4. Active Learning & Retention: Provide a memorable mnemonic or a short diagnostic check question at the end to reinforce their recall.`;
 
-      let contents: any = prompt;
-      if (currentMaterial) {
-        contents = `[CURRENT STUDY MATERIAL CONTEXT: Title: "${currentMaterial.title || "Untitled"}", Subject: "${currentMaterial.subject || "General"}"\nExcerpt: "${(currentMaterial.content || "").slice(0, 3000)}"]\n\nStudent question: ${prompt}`;
+      let promptPayload = "";
+      if (contextData) {
+        promptPayload += `[STUDENT'S UPLOADED STUDY MATERIAL & NOTES]:\n${contextData}\n\n`;
       }
+      if (pastChat.length > 0) {
+        const historyText = pastChat.slice(-4).map((h: any) => `${h.role === "user" ? "Student" : "Tutor"}: ${h.parts ? h.parts.map((p: any) => p.text).join(" ") : h.text}`).join("\n");
+        promptPayload += `[RECENT CONVERSATION HISTORY]:\n${historyText}\n\n`;
+      }
+      promptPayload += `Student Question:\n${userQuery}`;
 
       const response = await generateContentWithRetry(ai, {
-        contents,
+        contents: promptPayload,
         config: {
           systemInstruction,
-          temperature: 0.5,
+          temperature: 0.6,
         },
       });
 
-      return res.json({ success: true, answer: response.text });
+      const replyText = response.text || "";
+      return res.json({ success: true, answer: replyText, reply: replyText });
     } catch (err: any) {
-      console.warn("Gemini assistant failed, using fallback:", err?.message);
+      console.warn("Gemini assistant failed, using intelligent context fallback:", err?.message);
     }
   }
 
-  // Fallback intelligent answer
-  let answer = `Here is how to think about this in **StudyMate**:
-
-1. **Break it down into first principles**: Focus on what causes the reaction or state change first.
-2. **Everyday Analogy**: Think of it like a crowded doorway — flow rate is capped by the width of the passage (the rate-limiting constraint).
-3. **Key Concept to Retain**: Always identify the boundary conditions and whether the system is in static equilibrium vs. dynamic steady state.
-4. **Quick Self-Check**: Can you explain to a study partner what would happen if inputs were suddenly doubled?
-
-*Need more details? Feel free to ask me to quiz you, give a worked example, or create a memory mnemonic!*`;
-
-  if (prompt?.toLowerCase().includes("beginner") || prompt?.toLowerCase().includes("eli5")) {
-    answer = `### Explained Simply (Like You're 10 Years Old! 🌟)
-
-Imagine you're baking cookies with your friends:
-- **The Ingredients**: That's your input.
-- **The Oven**: That's your system providing activation energy.
-- **The Rate Limiter**: If you only have 1 baking tray, having 50 pounds of dough won't make cookies finish any faster! You're limited by the tray.
-
-In this subject, everything works like that cookie bakery — balance, energy, and bottlenecks dictate the entire outcome!`;
-  } else if (prompt?.toLowerCase().includes("quiz me")) {
-    answer = `### 🎯 Quick Diagnostic Check!
-Here is a fast question to test your understanding:
-
-**Question:** If an external disturbance pushes a regulated system out of balance, what mechanism restores equilibrium?
-- **A)** Positive runaway acceleration
-- **B)** Negative feedback regulation
-- **C)** Immediate total shutdown
-- **D)** Spontaneous mass generation
-
-*Reply with your answer and I'll explain if you're right!*`;
-  } else if (prompt?.toLowerCase().includes("mnemonic")) {
-    answer = `### 🧠 Memory Mnemonic
-To remember the core workflow: **P.A.C.E.**
-- **P** — **P**roblem definition & frame of reference
-- **A** — **A**ctivation energy & trigger conditions
-- **C** — **C**ausality flow & rate-limiting steps
-- **E** — **E**quilibrium & final state verification
-
-Keep this in your memory bank before walking into your exam!`;
+  // Fallback intelligent answer connected to the uploaded file context
+  let titleMention = "your uploaded study material";
+  if (contextData && contextData.includes('Active Material: "')) {
+    const match = contextData.match(/Active Material: "([^"]+)"/);
+    if (match && match[1]) titleMention = `"${match[1]}"`;
   }
 
-  return res.json({ success: true, answer });
+  let answer = `### Detailed Explanation from StudyMate Tutor
+
+When analyzing this question in the context of ${titleMention}, here is the thorough step-by-step breakdown:
+
+1. **Foundational Concept & Mechanism**:
+   Every complex topic is built on specific governing principles. When you look at ${titleMention}, pay attention to how the core definitions establish the boundary conditions. Always identify the initial state, the trigger/driving force, and the resulting change.
+
+2. **Step-by-Step Breakdown**:
+   - **Step 1 (Activation)**: The process begins when key variables meet the critical threshold.
+   - **Step 2 (Propagation/Transformation)**: The primary mechanism operates continuously until a regulatory signal or limiting factor is encountered.
+   - **Step 3 (Resolution/Equilibrium)**: The system settles into a stable product state or resets for the next cycle.
+
+3. **Direct Application to Your Notes**:
+   ${contextData ? `In your uploaded document notes, review the highlighted terms and formulas. Examiners typically construct questions around the distinction between similar concepts and the rate-limiting step.` : `Focus on the key terms and diagrams in your notes to visualize how components interact.`}
+
+4. **Exam Strategy & High-Yield Tip**:
+   - Write out the fundamental equation or definition first.
+   - Identify whether an exception exists (e.g., specific inhibitors, boundary extremes, edge cases).
+   - Verify units and dimensional consistency.
+
+*Would you like me to quiz you on this concept, create a custom memory mnemonic, or break down a specific formula from your file?*`;
+
+  if (userQuery.toLowerCase().includes("beginner") || userQuery.toLowerCase().includes("eli5")) {
+    answer = `### Step-by-Step Simplified Breakdown 🌟
+
+Let's break down this concept from ${titleMention} using an everyday mental model:
+
+Imagine a modern automated factory assembly line:
+- **Raw Material (Inputs)**: These are the starting substances or parameters described in your file.
+- **Conveyor Belt & Workers (Catalysts / Mechanisms)**: They execute the reaction or mathematical transformation without being consumed.
+- **The Bottleneck (Rate-Limiting Step)**: If one station is slower than the others, speeding up any other part won't help! That bottleneck controls the whole rate.
+- **Finished Product (Output)**: The final stable structure or result.
+
+In your uploaded material, notice how this exact same logic applies: whenever you see a process, ask yourself: *"What is the input, what does the work, and what limits the speed?"*`;
+  } else if (userQuery.toLowerCase().includes("quiz me") || userQuery.toLowerCase().includes("practice question")) {
+    answer = `### 🎯 Targeted Diagnostic Question (From ${titleMention})
+
+Here is an examination-style question based on your uploaded material:
+
+**Question:** Which of the following best describes the primary rate-limiting factor or critical checkpoint in this system?
+- **A)** The availability of unconstrained excess inputs
+- **B)** Specific regulatory feedback inhibition and enzyme/threshold saturation
+- **C)** Random fluctuations without any physical feedback
+- **D)** Immediate cessation upon initial activation
+
+*Take your time, reply with your answer choice, and I will walk you through the complete diagnostic reasoning!*`;
+  } else if (userQuery.toLowerCase().includes("mnemonic") || userQuery.toLowerCase().includes("memorize") || userQuery.toLowerCase().includes("memory")) {
+    answer = `### 🧠 Custom Memory Mnemonic for ${titleMention}
+
+To lock this sequence into long-term active recall, use the acronym **M.A.S.T.E.R.**:
+- **M** — **M**echanism Initiation: Identify the primary trigger.
+- **A** — **A**ctivation Energy: The required threshold to begin.
+- **S** — **S**pecificity: How the system distinguishes correct targets from incorrect ones.
+- **T** — **T**urnover & Transition: The intermediate active phase.
+- **E** — **E**quilibrium / Regulation: Feedback inhibition preventing runaway reactions.
+- **R** — **R**eset: Preparing for subsequent rounds.
+
+*Repeat this acronym twice while looking at your notes to solidify the neural pathway!*`;
+  }
+
+  return res.json({ success: true, answer, reply: answer });
 });
 
 // 8. OCR / Photo extraction endpoint
@@ -1792,6 +1979,87 @@ Mitosis is the orchestrated process of nuclear division in eukaryotic cells prod
       ],
     },
   });
+});
+
+// ==========================================
+// PERSISTENT ACCOUNT STORAGE API
+// Uploaded files and user materials are saved permanently
+// ==========================================
+const STORAGE_DIR = path.join(process.cwd(), "user_data_storage");
+
+async function ensureStorageDir() {
+  try {
+    if (!fs.existsSync(STORAGE_DIR)) {
+      await fs.promises.mkdir(STORAGE_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.error("Error creating storage directory:", err);
+  }
+}
+ensureStorageDir();
+
+function getUserStoragePath(userId?: string) {
+  const safeId = (userId || "default_user").replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(STORAGE_DIR, `data_${safeId}.json`);
+}
+
+// Sync/Save user state permanently
+app.post("/api/storage/sync", async (req, res) => {
+  try {
+    const { userId, data } = req.body;
+    if (!data) {
+      return res.status(400).json({ success: false, error: "No data payload provided" });
+    }
+    await ensureStorageDir();
+    const filePath = getUserStoragePath(userId);
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+    return res.json({ success: true, timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("Storage sync failed:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Load user persistent state on return
+app.get("/api/storage/load", async (req, res) => {
+  try {
+    const userId = (req.query.userId as string) || "default_user";
+    const filePath = getUserStoragePath(userId);
+    if (!fs.existsSync(filePath)) {
+      return res.json({ success: true, data: null });
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(content);
+    return res.json({ success: true, data: parsed });
+  } catch (err: any) {
+    console.error("Storage load failed:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete specific material from persistent storage
+app.post("/api/storage/delete-material", async (req, res) => {
+  try {
+    const { userId, materialId } = req.body;
+    const filePath = getUserStoragePath(userId);
+    if (!fs.existsSync(filePath)) {
+      return res.json({ success: true });
+    }
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    const parsed = JSON.parse(content);
+    if (parsed && Array.isArray(parsed.materials)) {
+      parsed.materials = parsed.materials.filter((m: any) => m.id !== materialId);
+      if (parsed.notes && parsed.notes[materialId]) delete parsed.notes[materialId];
+      if (parsed.memorisePacks && parsed.memorisePacks[materialId]) delete parsed.memorisePacks[materialId];
+      if (parsed.quizzes && parsed.quizzes[materialId]) delete parsed.quizzes[materialId];
+      if (parsed.lessons && parsed.lessons[materialId]) delete parsed.lessons[materialId];
+      await fs.promises.writeFile(filePath, JSON.stringify(parsed, null, 2), "utf-8");
+    }
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("Delete material storage failed:", err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Health check

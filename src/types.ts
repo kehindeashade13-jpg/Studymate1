@@ -87,6 +87,7 @@ export interface StudyNotes {
   formulas: { name: string; formula: string; explanation: string }[];
   commonMistakes: { mistake: string; correction: string; whyItHappens: string }[];
   quickRecap: string[];
+  feynmanPrompt?: string;
   userHighlights?: string[];
   personalNotes?: string;
   isBookmarked?: boolean;

@@ -22,8 +22,12 @@ import {
   ArrowUp,
   Camera,
   FileText,
+  Maximize2,
+  Minimize2,
+  Copy,
 } from "lucide-react";
 import { StudySubject, StudyMaterial, StudyNotes } from "../types";
+import { cleanTitle, isGarbledText } from "../utils/studyTransformer";
 
 export const LibraryView: React.FC = () => {
   const {
@@ -41,7 +45,6 @@ export const LibraryView: React.FC = () => {
   } = useStudy();
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState<StudySubject | "All">("All");
   const [viewMode, setViewMode] = useState<"grid" | "detail">("grid");
   const [selectedMaterialForNotes, setSelectedMaterialForNotes] = useState<StudyMaterial | null>(
     activeMaterial || materials[0] || null
@@ -56,12 +59,11 @@ export const LibraryView: React.FC = () => {
     : undefined;
 
   const filteredMaterials = materials.filter((m) => {
-    const matchSubj = selectedSubject === "All" || m.subject === selectedSubject;
     const matchQuery =
       m.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.subject.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSubj && matchQuery;
+    return matchQuery;
   });
 
   const handleShareToGroup = (mat: StudyMaterial) => {
@@ -169,33 +171,6 @@ export const LibraryView: React.FC = () => {
             <span>New Deck</span>
           </button>
         </div>
-      </div>
-
-      {/* Subject Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {[
-          "All",
-          "Biology",
-          "Mathematics",
-          "Chemistry",
-          "Physics",
-          "History",
-          "Computer Science",
-          "English",
-          "Business",
-        ].map((sub) => (
-          <button
-            key={sub}
-            onClick={() => setSelectedSubject(sub as any)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer ${
-              selectedSubject === sub
-                ? "bg-slate-900 text-white shadow-xs"
-                : "bg-white hover:bg-slate-100 text-slate-600 border border-[#DDD9CE]"
-            }`}
-          >
-            {sub}
-          </button>
-        ))}
       </div>
 
       {/* No Decks State */}
