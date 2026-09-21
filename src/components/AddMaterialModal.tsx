@@ -22,7 +22,14 @@ import {
 import { useStudy, ActiveTab } from "../context/StudyContext";
 import { StudySubject, SourceType, StudyMaterial } from "../types";
 import { ProcessingScreen } from "./ProcessingScreen";
-import { generateFallbackStudyPackage, safeFetchJson, cleanTitle, cleanToNaturalEnglish } from "../utils/studyTransformer";
+import {
+  generateFallbackStudyPackage,
+  safeFetchJson,
+  cleanTitle,
+  cleanToNaturalEnglish,
+  extractCourseCode,
+  detectSubjectFromCodeOrTitle,
+} from "../utils/studyTransformer";
 
 export const AddMaterialModal: React.FC = () => {
   const {
@@ -39,6 +46,7 @@ export const AddMaterialModal: React.FC = () => {
   } = useStudy();
 
   const [activeImportType, setActiveImportType] = useState<SourceType>(initialImportType || "upload");
+  const [courseCode, setCourseCode] = useState<string>("");
   const [subject, setSubject] = useState<StudySubject>("Chemistry");
   const [title, setTitle] = useState(initialImportQuery || "");
   const [content, setContent] = useState("");
@@ -84,6 +92,12 @@ export const AddMaterialModal: React.FC = () => {
     const cleanDocTitle = cleanTitle(fileName.replace(/\.[^/.]+$/, ""));
     setUploadedFileName(fileName);
 
+    const detectedCode = extractCourseCode(fileName, undefined, cleanDocTitle);
+    if (detectedCode) {
+      setCourseCode(detectedCode);
+      setSubject(detectSubjectFromCodeOrTitle(detectedCode));
+    }
+
     if (!title) {
       setTitle(cleanDocTitle);
     }
@@ -113,7 +127,13 @@ export const AddMaterialModal: React.FC = () => {
           });
           const json = await res.json();
           if (json?.success && json.text && json.text.trim().length > 30) {
-            setContent(cleanToNaturalEnglish(json.text));
+            const cleanText = cleanToNaturalEnglish(json.text);
+            setContent(cleanText);
+            const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
+            if (codeFromContent) {
+              setCourseCode(codeFromContent);
+              setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
+            }
           } else {
             setContent(
               `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`
@@ -129,7 +149,13 @@ export const AddMaterialModal: React.FC = () => {
       } else {
         try {
           const text = atob(dataUrl.split(",")[1] || "");
-          setContent(cleanToNaturalEnglish(text) || `# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+          const cleanText = cleanToNaturalEnglish(text);
+          setContent(cleanText || `# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+          const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
+          if (codeFromContent) {
+            setCourseCode(codeFromContent);
+            setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
+          }
         } catch {
           setContent(`# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
         }
@@ -210,19 +236,30 @@ export const AddMaterialModal: React.FC = () => {
 
     const newMaterialId = `mat-${Date.now()}`;
     
+    const finalCourseCode =
+      courseCode.trim() ||
+      extractCourseCode(uploadedFileName || undefined, rawContent, finalTitle) ||
+      undefined;
+    const finalSubject = finalCourseCode
+      ? detectSubjectFromCodeOrTitle(finalCourseCode, rawContent)
+      : (subject || detectSubjectFromCodeOrTitle(finalTitle, rawContent));
+
     // Guaranteed fallback package ready instantly
     const fallbackPkg = generateFallbackStudyPackage(
       newMaterialId,
       finalTitle,
       rawContent,
-      subject,
+      finalSubject,
       activeImportType,
       youtubeUrl || undefined,
-      uploadedFileUrl || imagePreview || undefined
+      uploadedFileUrl || imagePreview || undefined,
+      finalCourseCode
     );
 
     let resolvedMaterial = {
       ...fallbackPkg.material,
+      courseCode: finalCourseCode,
+      subject: finalSubject,
       fileUrl: uploadedFileUrl || imagePreview || undefined,
     };
     let resolvedNotes = fallbackPkg.notes;
@@ -260,12 +297,12 @@ export const AddMaterialModal: React.FC = () => {
         };
       }
 
-      // 2. Fetch specialized study assets in parallel with 9s safety timeout
+      // 2. Fetch specialized study assets in parallel with 15s safety timeout
       const [notesRes, flashcardsRes, quizRes, lessonRes] = await Promise.all([
-        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 9000),
-        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 9000),
-        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 5 }, 9000),
-        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 9000),
+        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 15000),
+        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 15000),
+        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 5 }, 15000),
+        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 15000),
       ]);
 
       if (notesRes) {
@@ -480,18 +517,55 @@ export const AddMaterialModal: React.FC = () => {
           </div>
 
           <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6">
-            {/* Title input */}
-            <div>
-              <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
-                Material Title
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Cellular Respiration & Citric Acid Cycle"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
-              />
+            {/* Title & Course Code inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-[#0A1931] mb-1.5">
+                  Material Title
+                </label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (!courseCode) {
+                      const detected = extractCourseCode(undefined, undefined, e.target.value);
+                      if (detected) {
+                        setCourseCode(detected);
+                        setSubject(detectSubjectFromCodeOrTitle(detected));
+                      }
+                    }
+                  }}
+                  placeholder="e.g., Chemical Principles & Organic Reactions"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-[#0A1931]">
+                    Course Code
+                  </label>
+                  {courseCode && (
+                    <span className="text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                      Detected
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={courseCode}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCourseCode(val);
+                    if (val) {
+                      setSubject(detectSubjectFromCodeOrTitle(val));
+                    }
+                  }}
+                  placeholder="e.g., CHM 203, BIO 101"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-bold text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] uppercase transition"
+                />
+              </div>
             </div>
 
             {/* Source Type Cards */}

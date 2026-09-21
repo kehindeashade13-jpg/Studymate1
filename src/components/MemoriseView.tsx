@@ -20,6 +20,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { RepetitionRating, Flashcard, FillInTheBlank, Mnemonic } from "../types";
+import { CleanFormattedText } from "./CleanFormattedText";
 
 export const MemoriseView: React.FC = () => {
   const {
@@ -288,7 +289,7 @@ export const MemoriseView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-purple-500/20 text-purple-300">
-              {activeMaterial.subject}
+              {activeMaterial.courseCode || activeMaterial.subject}
             </span>
             <span className="text-xs text-slate-400">Active Recall & Memorisation</span>
           </div>
@@ -412,23 +413,28 @@ export const MemoriseView: React.FC = () => {
                   <span className="text-xs text-purple-400 font-semibold uppercase tracking-wider block mb-2">
                     {currentCard.category || "Active Recall"}
                   </span>
-                  <h3 className="text-xl sm:text-2xl font-bold text-white max-w-xl mx-auto leading-relaxed">
-                    {currentCard.front}
-                  </h3>
+                  <CleanFormattedText
+                    as="h3"
+                    content={currentCard.front}
+                    className="text-xl sm:text-2xl font-bold text-white max-w-xl mx-auto leading-relaxed"
+                  />
                 </div>
               ) : (
                 <div className="animate-in fade-in zoom-in-95 space-y-4">
                   {/* Front Prompt reminder */}
-                  <p className="text-xs text-purple-300 font-medium italic border-b border-slate-800 pb-2 max-w-xl mx-auto">
-                    Question: "{currentCard.front}"
-                  </p>
+                  <div className="text-xs text-purple-300 font-medium italic border-b border-slate-800 pb-2 max-w-xl mx-auto flex items-center justify-center gap-1.5 flex-wrap">
+                    <span>Question:</span>
+                    <CleanFormattedText as="span" content={`"${currentCard.front}"`} />
+                  </div>
 
                   {/* Direct Answer */}
                   <div>
                     <span className="text-[11px] uppercase font-bold text-slate-400 block mb-1">Answer</span>
-                    <p className="text-lg sm:text-xl font-extrabold text-white max-w-xl mx-auto leading-relaxed">
-                      {currentCard.back}
-                    </p>
+                    <CleanFormattedText
+                      as="p"
+                      content={currentCard.back}
+                      className="text-lg sm:text-xl font-extrabold text-white max-w-xl mx-auto leading-relaxed"
+                    />
                   </div>
 
                   {/* REVEAL DETAILED EXPLANATION OF THE QUESTION ASKED */}
@@ -437,10 +443,13 @@ export const MemoriseView: React.FC = () => {
                       <Brain className="w-4 h-4 text-purple-400" />
                       <span>Detailed Explanation of the Question Asked</span>
                     </div>
-                    <p className="text-xs sm:text-sm text-purple-100 leading-relaxed font-sans whitespace-pre-line">
-                      {currentCard.explanation ||
-                        `Detailed Breakdown: ${currentCard.back}. In ${activeMaterial.title}, this core mechanism guarantees dynamic equilibrium and prevents systemic errors. Understanding this causal relationship allows you to answer both multiple choice and free response exam questions accurately.`}
-                    </p>
+                    <CleanFormattedText
+                      content={
+                        currentCard.explanation ||
+                        `Detailed Breakdown: ${currentCard.back}. In ${activeMaterial.title}, this core mechanism guarantees dynamic equilibrium and prevents systemic errors. Understanding this causal relationship allows you to answer both multiple choice and free response exam questions accurately.`
+                      }
+                      className="text-xs sm:text-sm text-purple-100 leading-relaxed font-sans"
+                    />
                   </div>
                 </div>
               )}
@@ -584,9 +593,11 @@ export const MemoriseView: React.FC = () => {
                     )}
                   </div>
 
-                  <p className="text-sm sm:text-base font-semibold text-slate-100 leading-relaxed">
-                    {b.sentence}
-                  </p>
+                  <CleanFormattedText
+                    as="p"
+                    content={b.sentence}
+                    className="text-sm sm:text-base font-semibold text-slate-100 leading-relaxed"
+                  />
 
                   {/* 4 Objective Options */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -613,17 +624,17 @@ export const MemoriseView: React.FC = () => {
                           }}
                           className={`p-3 rounded-xl border text-xs sm:text-sm text-left transition flex items-center justify-between cursor-pointer ${btnStyle}`}
                         >
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <span className="w-5 h-5 rounded-full border border-current text-[11px] flex items-center justify-center shrink-0">
                               {String.fromCharCode(65 + optIdx)}
                             </span>
-                            <span>{opt}</span>
+                            <CleanFormattedText as="span" content={opt} className="break-words" />
                           </div>
                           {isChecked && opt === b.answer && (
-                            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-2" />
                           )}
                           {isChecked && isChosen && !isCorrect && (
-                            <X className="w-4 h-4 text-rose-400 shrink-0" />
+                            <X className="w-4 h-4 text-rose-400 shrink-0 ml-2" />
                           )}
                         </button>
                       );
@@ -653,7 +664,7 @@ export const MemoriseView: React.FC = () => {
                           : "bg-rose-950/40 border border-rose-500/40 text-rose-200"
                       }`}
                     >
-                      <div className="flex items-center justify-between font-bold">
+                      <div className="flex items-center justify-between font-bold flex-wrap gap-1">
                         <span>
                           {isCorrect
                             ? "✓ Excellent! Correctly retrieved."
@@ -661,13 +672,16 @@ export const MemoriseView: React.FC = () => {
                         </span>
                         {b.hint && (
                           <span className="text-[11px] text-slate-400 font-normal">
-                            Hint: {b.hint}
+                            <CleanFormattedText as="span" content={`Hint: ${b.hint}`} />
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed pt-1">
-                        {b.explanation || `"${b.answer}" is the precise term defining this operational principle in ${activeMaterial.title}.`}
-                      </p>
+                      <div className="pt-1">
+                        <CleanFormattedText
+                          content={b.explanation || `"${b.answer}" is the precise term defining this operational principle in ${activeMaterial.title}.`}
+                          className="text-xs text-slate-300 leading-relaxed"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -698,18 +712,18 @@ export const MemoriseView: React.FC = () => {
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider">
-                      {m.concept}
+                      <CleanFormattedText as="span" content={m.concept} />
                     </span>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold">
                       #{idx + 1}
                     </span>
                   </div>
                   <h4 className="text-lg font-black text-white tracking-wide mb-1">
-                    {m.phrase}
+                    <CleanFormattedText as="span" content={m.phrase} />
                   </h4>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    {m.explanation}
-                  </p>
+                  <div className="text-xs text-slate-300 leading-relaxed">
+                    <CleanFormattedText content={m.explanation} />
+                  </div>
                 </div>
               </div>
             ))}

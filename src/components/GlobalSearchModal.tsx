@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useStudy } from "../context/StudyContext";
+import { UniversalContentRenderer } from "./UniversalContentRenderer";
 import {
   Search,
   BookOpen,
@@ -97,8 +98,12 @@ export const GlobalSearchModal: React.FC = () => {
                     <div className="flex items-center gap-2.5">
                       <BookOpen className="w-4 h-4 text-blue-400" />
                       <div>
-                        <p className="font-semibold text-white">{m.title}</p>
-                        <p className="text-[10px] text-slate-400">{m.subject}</p>
+                        <p className="font-semibold text-white">
+                          <UniversalContentRenderer as="span" content={m.title} inline />
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          <UniversalContentRenderer as="span" content={m.subject} inline />
+                        </p>
                       </div>
                     </div>
                     <ArrowRight className="w-3.5 h-3.5 text-slate-500" />

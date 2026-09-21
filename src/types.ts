@@ -53,6 +53,7 @@ export interface StudyMaterial {
   id: string;
   title: string;
   subject: StudySubject;
+  courseCode?: string;
   sourceType: SourceType;
   sourceUrl?: string;
   fileUrl?: string;

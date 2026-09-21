@@ -1,4 +1,5 @@
 import React from "react";
+import { UniversalContentRenderer } from "./UniversalContentRenderer";
 import {
   CheckCircle2,
   Sparkles,
@@ -114,7 +115,14 @@ export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({
                 <p className="text-xs text-emerald-800">
                   Saved to Supabase Storage & Database tables with notes, flashcards, and key concepts:
                 </p>
-                <p className="text-xs font-bold text-[#0F172A] mt-0.5 truncate">{material.title}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] uppercase font-bold text-teal-700 bg-teal-100/80 px-2 py-0.5 rounded-full">
+                    {material.courseCode || material.subject}
+                  </span>
+                  <p className="text-xs font-bold text-[#0F172A] truncate">
+                    <UniversalContentRenderer as="span" content={material.title} inline />
+                  </p>
+                </div>
               </div>
             </div>
 

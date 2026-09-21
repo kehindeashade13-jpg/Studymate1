@@ -36,6 +36,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { SourceType, StudyMaterial } from "../types";
 import { cleanTitle, cleanToNaturalEnglish } from "../utils/studyTransformer";
+import { CleanFormattedText } from "./CleanFormattedText";
 
 export const DashboardView: React.FC = () => {
   const {
@@ -153,27 +154,36 @@ export const DashboardView: React.FC = () => {
   };
 
   // Helper for subject metadata
-  const getSubjectMeta = (subject: string) => {
-    switch (subject.toLowerCase()) {
-      case "biology":
-        return { color: "text-emerald-700 bg-emerald-100 border-emerald-200", emoji: "🧬" };
-      case "mathematics":
-        return { color: "text-blue-700 bg-blue-100 border-blue-200", emoji: "📐" };
-      case "chemistry":
-        return { color: "text-teal-700 bg-teal-100 border-teal-200", emoji: "🧪" };
-      case "physics":
-        return { color: "text-cyan-700 bg-cyan-100 border-cyan-200", emoji: "⚛️" };
-      case "history":
-        return { color: "text-amber-700 bg-amber-100 border-amber-200", emoji: "🏛️" };
-      case "computer science":
-        return { color: "text-indigo-700 bg-indigo-100 border-indigo-200", emoji: "💻" };
-      case "english":
-        return { color: "text-purple-700 bg-purple-100 border-purple-200", emoji: "📖" };
-      case "business":
-        return { color: "text-rose-700 bg-rose-100 border-rose-200", emoji: "📊" };
-      default:
-        return { color: "text-slate-700 bg-slate-100 border-slate-200", emoji: "📚" };
+  const getSubjectMeta = (subjectOrCode: string) => {
+    const s = (subjectOrCode || "").toLowerCase();
+    if (s.includes("chem") || s.startsWith("chm") || s.includes("bch")) {
+      return { color: "text-teal-700 bg-teal-100 border-teal-200", emoji: "🧪" };
     }
+    if (s.includes("bio") || s.startsWith("mcb") || s.startsWith("zoo") || s.startsWith("bot")) {
+      return { color: "text-emerald-700 bg-emerald-100 border-emerald-200", emoji: "🧬" };
+    }
+    if (s.includes("math") || s.startsWith("mth") || s.startsWith("mat") || s.startsWith("sta") || s.includes("calc")) {
+      return { color: "text-blue-700 bg-blue-100 border-blue-200", emoji: "📐" };
+    }
+    if (s.includes("phys") || s.startsWith("phy")) {
+      return { color: "text-cyan-700 bg-cyan-100 border-cyan-200", emoji: "⚛️" };
+    }
+    if (s.includes("hist") || s.startsWith("his") || s.startsWith("pol")) {
+      return { color: "text-amber-700 bg-amber-100 border-amber-200", emoji: "🏛️" };
+    }
+    if (s.includes("comp") || s.startsWith("csc") || s.startsWith("cos") || s.startsWith("cs") || s.startsWith("swe")) {
+      return { color: "text-indigo-700 bg-indigo-100 border-indigo-200", emoji: "💻" };
+    }
+    if (s.includes("eng") || s.startsWith("lit") || s.startsWith("gst")) {
+      return { color: "text-purple-700 bg-purple-100 border-purple-200", emoji: "📖" };
+    }
+    if (s.includes("bus") || s.startsWith("eco") || s.startsWith("acc") || s.startsWith("fin")) {
+      return { color: "text-rose-700 bg-rose-100 border-rose-200", emoji: "📊" };
+    }
+    if (s.includes("psyc") || s.startsWith("psy") || s.startsWith("soc")) {
+      return { color: "text-violet-700 bg-violet-100 border-violet-200", emoji: "🧠" };
+    }
+    return { color: "text-slate-700 bg-slate-100 border-slate-200", emoji: "📚" };
   };
 
   // Sort materials by date descending (newest uploads first)
@@ -392,7 +402,8 @@ export const DashboardView: React.FC = () => {
         {materials.length > 0 ? (
           <div className="space-y-3">
             {materials.map((mat) => {
-              const meta = getSubjectMeta(mat.subject);
+              const displayCode = mat.courseCode || mat.subject;
+              const meta = getSubjectMeta(displayCode);
               const cardCount = mat.definitions?.length || 10;
               const quizCount = mat.potentialExamQuestions?.length || 5;
 
@@ -408,7 +419,7 @@ export const DashboardView: React.FC = () => {
                         className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${meta.color}`}
                       >
                         <span>{meta.emoji}</span>
-                        <span>{mat.subject}</span>
+                        <span>{displayCode}</span>
                       </span>
 
                       <span className="text-[10px] font-semibold text-[#0A1931] uppercase px-2 py-0.5 rounded bg-slate-100 border border-slate-200">
@@ -618,7 +629,7 @@ export const DashboardView: React.FC = () => {
           filteredRecentMaterials.length > 0 ? (
             <div className="space-y-3">
               {filteredRecentMaterials.map((mat) => {
-                const meta = getSubjectMeta(mat.subject);
+                const meta = getSubjectMeta(mat.courseCode || mat.subject);
                 const sourceMeta = getSourceTypeDisplay(mat.sourceType);
                 const SourceIcon = sourceMeta.icon;
                 const isPhoto = mat.sourceType === "photo" || !!mat.fileUrl;
@@ -678,12 +689,12 @@ export const DashboardView: React.FC = () => {
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {/* Subject Badge */}
+                            {/* Subject / Course Code Badge */}
                             <span
                               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${meta.color}`}
                             >
                               <span>{meta.emoji}</span>
-                              <span>{mat.subject}</span>
+                              <span>{mat.courseCode || mat.subject}</span>
                             </span>
 
                             {/* Source Format Badge */}
@@ -707,13 +718,15 @@ export const DashboardView: React.FC = () => {
                           onClick={() => handleOpenMaterialMode(mat, "learn")}
                           className="font-extrabold text-sm sm:text-base text-[#0A1931] hover:text-[#6366F1] transition cursor-pointer leading-snug line-clamp-1"
                         >
-                          {mat.title}
+                          <CleanFormattedText as="span" content={mat.title} />
                         </h3>
 
                         {/* Excerpt / Summary */}
-                        <p className="text-xs text-[#1B2A4A]/70 line-clamp-1 leading-relaxed">
-                          {mat.summary || (mat.rawText ? mat.rawText.slice(0, 140) : "Uploaded study material ready for active recall practice.")}
-                        </p>
+                        <div className="text-xs text-[#1B2A4A]/70 line-clamp-1 leading-relaxed">
+                          <CleanFormattedText
+                            content={mat.summary || (mat.rawText ? mat.rawText.slice(0, 140) : "Uploaded study material ready for active recall practice.")}
+                          />
+                        </div>
 
                         {/* Metrics Pills */}
                         <div className="flex items-center gap-2 pt-0.5 text-[11px] font-semibold text-slate-500 flex-wrap">
@@ -874,7 +887,7 @@ export const DashboardView: React.FC = () => {
                     {cleanTitle(previewingMaterial.title)}
                   </h3>
                   <div className="flex items-center gap-2 text-[11px] text-[#1B2A4A]/70">
-                    <span>{previewingMaterial.subject}</span>
+                    <span>{previewingMaterial.courseCode || previewingMaterial.subject}</span>
                     <span>•</span>
                     <span className="capitalize">{previewingMaterial.sourceType}</span>
                     <span>•</span>
@@ -912,9 +925,9 @@ export const DashboardView: React.FC = () => {
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>AI Analysis Summary</span>
                   </div>
-                  <p className="text-xs text-[#0A1931] leading-relaxed">
-                    {cleanToNaturalEnglish(previewingMaterial.summary)}
-                  </p>
+                  <div className="text-xs text-[#0A1931] leading-relaxed">
+                    <CleanFormattedText content={previewingMaterial.summary} />
+                  </div>
                 </div>
               )}
 
@@ -948,8 +961,8 @@ export const DashboardView: React.FC = () => {
                     )}
                   </button>
                 </div>
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans text-slate-800 max-h-56 overflow-y-auto whitespace-pre-line leading-relaxed space-y-2">
-                  {cleanToNaturalEnglish(previewingMaterial.rawText)}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans text-slate-800 max-h-56 overflow-y-auto leading-relaxed space-y-2">
+                  <CleanFormattedText content={previewingMaterial.rawText} />
                 </div>
               </div>
             </div>

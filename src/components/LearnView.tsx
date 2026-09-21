@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { LessonStep, LessonQuestion } from "../types";
 import { create5QuestionsForLesson, repairLessonPack } from "../utils/studyTransformer";
+import { CleanFormattedText } from "./CleanFormattedText";
 
 function renderBoldSegments(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -214,7 +215,7 @@ export const LearnView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-blue-500/20 text-blue-300">
-              {activeMaterial.subject}
+              {activeMaterial.courseCode || activeMaterial.subject}
             </span>
             <span className="text-xs text-slate-400">Step-by-Step AI Tutor</span>
           </div>
@@ -278,7 +279,7 @@ export const LearnView: React.FC = () => {
 
         {/* Lesson Body Content */}
         <div className="pt-2">
-          {formatLessonWriteup(currentStep.content)}
+          <CleanFormattedText content={currentStep.content} />
         </div>
 
         {/* Intuitive Analogy Box */}
@@ -291,7 +292,7 @@ export const LearnView: React.FC = () => {
               <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-1">
                 Intuitive Mental Model & Analogy
               </h4>
-              <p className="text-xs text-indigo-100/90 leading-relaxed">{currentStep.analogy}</p>
+              <CleanFormattedText as="p" content={currentStep.analogy} className="text-xs text-indigo-100/90 leading-relaxed" />
             </div>
           </div>
         )}
@@ -362,9 +363,11 @@ export const LearnView: React.FC = () => {
               <span>Select one answer</span>
             </div>
 
-            <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed">
-              {currentQ.question}
-            </p>
+            <CleanFormattedText
+              as="p"
+              content={currentQ.question}
+              className="text-xs sm:text-sm font-semibold text-white leading-relaxed"
+            />
 
             {/* 4 Objective Options */}
             <div className="space-y-2.5">
@@ -388,17 +391,17 @@ export const LearnView: React.FC = () => {
                     onClick={() => handleSelectOption(idx)}
                     className={`w-full text-left p-3 rounded-xl border text-xs sm:text-sm transition flex items-center justify-between cursor-pointer ${btnClass}`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <span className="w-5 h-5 rounded-full border border-current text-[11px] flex items-center justify-center shrink-0">
                         {String.fromCharCode(65 + idx)}
                       </span>
-                      <span>{opt}</span>
+                      <CleanFormattedText as="span" content={opt} className="break-words" />
                     </div>
                     {hasSubmittedAnswer && idx === currentQ.correctIndex && (
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-2" />
                     )}
                     {hasSubmittedAnswer && isSelected && !isAnswerCorrect && (
-                      <X className="w-4 h-4 text-rose-400 shrink-0" />
+                      <X className="w-4 h-4 text-rose-400 shrink-0 ml-2" />
                     )}
                   </button>
                 );
@@ -427,12 +430,16 @@ export const LearnView: React.FC = () => {
                     </>
                   )}
                 </div>
-                <p className="text-xs leading-relaxed">
-                  {isAnswerCorrect ? currentQ.reinforcement : currentQ.struggleExplanation}
-                </p>
+                <CleanFormattedText
+                  as="p"
+                  content={isAnswerCorrect ? currentQ.reinforcement : currentQ.struggleExplanation}
+                  className="text-xs leading-relaxed"
+                />
                 {!isAnswerCorrect && (
                   <div className="mt-2.5 pt-2 border-t border-amber-800/40 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] gap-2">
-                    <span className="text-amber-300/80">Hint: {currentQ.hint}</span>
+                    <span className="text-amber-300/80">
+                      <CleanFormattedText as="span" content={`Hint: ${currentQ.hint}`} />
+                    </span>
                     <button
                       onClick={() => setIsAssistantOpen(true)}
                       className="text-blue-400 font-semibold hover:underline self-start sm:self-auto cursor-pointer"

@@ -13,6 +13,12 @@ import {
   LessonQuestion,
   QuizQuestion,
 } from "../types";
+import {
+  cleanMojibake,
+  cleanLatexAndMath,
+  stripMarkdownToPlain,
+  formatAcademicText,
+} from "./universalSanitizer";
 
 // Detect if a string contains binary, replacement (\uFFFD), dense question mark corruption, or unprintable character corruption
 export function isGarbledText(text: string): boolean {
@@ -52,12 +58,98 @@ export function isGarbledText(text: string): boolean {
   return false;
 }
 
+// Extract course code (e.g. "CHM 203", "BIO 101", "MTH 201", "PHY 102", "CSC 311")
+// from file name, document text, or title
+export function extractCourseCode(
+  fileName?: string,
+  text?: string,
+  title?: string
+): string | null {
+  const sources = [fileName, title, text?.slice(0, 3000)].filter(Boolean) as string[];
+
+  // 1. Check explicit labeled pattern: "Course Code: CHM 203", "Course: BIO 101", "Code: MTH 101"
+  for (const src of sources) {
+    const explicitMatch = src.match(
+      /(?:course\s*(?:code|no|num|number)?|course|code)\s*[:#-]?\s*([a-z]{2,5}\s*[-_]?\s*\d{2,4}[a-z]?)\b/i
+    );
+    if (explicitMatch && explicitMatch[1]) {
+      const normalized = normalizeCourseCode(explicitMatch[1]);
+      if (normalized) return normalized;
+    }
+  }
+
+  // 2. Academic course code pattern: 2-4 letters followed by 2-4 digits (with optional letter)
+  // E.g. CHM 203, CHM203, CHM-203, BIO 101, MTH 201, PHY 102, CSC 311, GST 101, ENG 101
+  const nonCourseWords = new Set([
+    "PAGE", "STEP", "CHAP", "NOTE", "PART", "UNIT", "ITEM", "YEAR", "ROOM", "DATE",
+    "TIME", "SECT", "RULE", "FORM", "TEST", "WEEK", "TERM", "DECK", "CARD", "BOOK"
+  ]);
+
+  for (const src of sources) {
+    const codeMatches = src.matchAll(/\b([A-Za-z]{2,4})\s*[-_]?\s*(\d{2,4}[A-Za-z]?)\b/g);
+    for (const match of codeMatches) {
+      const letters = match[1].toUpperCase();
+      const numbers = match[2].toUpperCase();
+      if (nonCourseWords.has(letters)) continue;
+      return `${letters} ${numbers}`;
+    }
+  }
+
+  return null;
+}
+
+function normalizeCourseCode(raw: string): string | null {
+  const cleaned = raw.trim().replace(/[_\-]+/g, " ");
+  const match = cleaned.match(/^([A-Za-z]{2,5})\s*(\d{2,4}[A-Za-z]?)$/);
+  if (match) {
+    return `${match[1].toUpperCase()} ${match[2].toUpperCase()}`;
+  }
+  return cleaned.toUpperCase();
+}
+
+// Detect subject from course code, title, or content to provide deeply accurate subject domain concepts
+export function detectSubjectFromCodeOrTitle(
+  codeOrTitle: string,
+  content?: string
+): StudySubject {
+  const textToScan = `${codeOrTitle} ${content?.slice(0, 1500) || ""}`.toUpperCase();
+
+  if (/\b(CHM|CHEM|CHEMISTRY|ORGANIC|INORGANIC|BIOCHEM|KINETICS|MOLECULE|ACID|REACTION|STOICHIOMETRY)\b/.test(textToScan)) {
+    return "Chemistry";
+  }
+  if (/\b(BIO|BIOL|BIOLOGY|CELL|GENETICS|ANATOMY|PHYSIOLOGY|BOTANY|ZOOLOGY|MICROBIO|MCB|NEURO)\b/.test(textToScan)) {
+    return "Biology";
+  }
+  if (/\b(PHY|PHYS|PHYSICS|MECHANICS|THERMO|QUANTUM|OPTICS|ELECTRO|MAGNET|NEWTON)\b/.test(textToScan)) {
+    return "Physics";
+  }
+  if (/\b(MTH|MATH|MAT|CALCULUS|ALGEBRA|STAT|STA|GEOMETRY|DERIVATIVE|INTEGRAL|MATRIX|TRIG)\b/.test(textToScan)) {
+    return "Mathematics";
+  }
+  if (/\b(CSC|COS|CMP|CS|SWE|IT|PROGRAMMING|ALGORITHM|PYTHON|JAVA|SQL|DATABASE|SOFTWARE)\b/.test(textToScan)) {
+    return "Computer Science";
+  }
+  if (/\b(ECO|ECN|BUS|FIN|ACC|ECONOMICS|ACCOUNTING|MARKETING|MANAGEMENT|FINANCE)\b/.test(textToScan)) {
+    return "Business";
+  }
+  if (/\b(ENG|ENGL|LIT|WRITING|POETRY|NOVEL|GRAMMAR|SHAKESPEARE|ESSAY|GST)\b/.test(textToScan)) {
+    return "English";
+  }
+  if (/\b(HIS|HIST|CIVILIZATION|WAR|REVOLUTION|HISTORY|EMPIRE|GOVERNMENT|POL)\b/.test(textToScan)) {
+    return "History";
+  }
+  if (/\b(PSY|PSYC|PSYCHOLOGY|BEHAVIOR|COGNITIVE|THERAPY|SOC|SOCIOLOGY)\b/.test(textToScan)) {
+    return "Psychology";
+  }
+  return "Chemistry";
+}
+
 // Clean course or subject prefixes and author / phone number suffixes from material titles
 export function cleanTitle(raw: string): string {
   if (!raw) return "Study Material";
-  let cleaned = raw
+  let cleaned = stripMarkdownToPlain(raw)
     .replace(/^\[[^\]]+\]\s*[:-]?\s*/i, "")
-    .replace(/^(biology|mathematics|chemistry|physics|history|computer science|english|business|course\s*\d+|bio|chem|math|cs|subject)\s*[:-]\s*/i, "")
+    .replace(/^(biology|mathematics|chemistry|physics|history|computer science|english|business|bio|chem|math|cs|subject)\s*[:-]\s*/i, "")
     .replace(/\.(pdf|docx?|pptx?|txt)$/i, "")
     .replace(/\s+by\s+[A-Za-z0-9_]+(\s+\d+)?/i, "") // strips e.g. "by Andrewz 08107303682"
     .replace(/\s+\d{8,}\b/g, "") // strips standalone long phone numbers
@@ -66,7 +158,7 @@ export function cleanTitle(raw: string): string {
 
   // If after cleaning it's empty or still garbled, provide a clean subject title
   if (!cleaned || isGarbledText(cleaned)) {
-    return "CHM 203 - Chemical Principles";
+    return "Course Study Material";
   }
 
   return cleaned;
@@ -74,42 +166,15 @@ export function cleanTitle(raw: string): string {
 
 // Detect subject from title to provide deeply accurate subject domain concepts
 export function detectSubjectFromTitle(title: string): StudySubject {
-  const upper = title.toUpperCase();
-  if (/\b(CHM|CHEM|CHEMISTRY|ORGANIC|INORGANIC|BIOCHEM|KINETICS|MOLECULE|ACID|REACTION)\b/.test(upper)) {
-    return "Chemistry";
-  }
-  if (/\b(BIO|BIOLOGY|CELL|GENETICS|ANATOMY|PHYSIOLOGY|BOTANY|ZOOLOGY|MICROBIO)\b/.test(upper)) {
-    return "Biology";
-  }
-  if (/\b(PHY|PHYSICS|MECHANICS|THERMO|QUANTUM|OPTICS|ELECTRO|MAGNET|NEWTON)\b/.test(upper)) {
-    return "Physics";
-  }
-  if (/\b(MTH|MATH|CALCULUS|ALGEBRA|STAT|GEOMETRY|DERIVATIVE|INTEGRAL|MATRIX)\b/.test(upper)) {
-    return "Mathematics";
-  }
-  if (/\b(CSC?|COS|CMP|CS|PROGRAMMING|ALGORITHM|PYTHON|JAVA|SQL|DATABASE)\b/.test(upper)) {
-    return "Computer Science";
-  }
-  if (/\b(ECO|ECN|BUS|FIN|ACC|ECONOMICS|MARKETING|MANAGEMENT|FINANCE)\b/.test(upper)) {
-    return "Business";
-  }
-  if (/\b(ENG|LIT|WRITING|POETRY|NOVEL|GRAMMAR|SHAKESPEARE|ESSAY)\b/.test(upper)) {
-    return "English";
-  }
-  if (/\b(HIS|CIVILIZATION|WAR|REVOLUTION|HISTORY|EMPIRE|GOVERNMENT)\b/.test(upper)) {
-    return "History";
-  }
-  if (/\b(PSY|PSYCHOLOGY|BEHAVIOR|COGNITIVE|NEURO|THERAPY)\b/.test(upper)) {
-    return "Psychology";
-  }
-  return "Chemistry";
+  return detectSubjectFromCodeOrTitle(title);
 }
 
 // Helper to clean text into natural readable English prose
 export function cleanToNaturalEnglish(text: string): string {
   if (!text) return "";
 
-  let cleaned = text;
+  let cleaned = cleanMojibake(text);
+  cleaned = cleanLatexAndMath(cleaned);
 
   // 1. Strip unicode replacement characters, unprintable bytes, and binary markers
   cleaned = cleaned.replace(/\uFFFD/g, "");
@@ -564,6 +629,30 @@ export function generateDiagnosticQuestions(
 // Sanitize an existing study material to ensure no corrupted font bytes or garbled terms persist
 export function sanitizeMaterial(mat: StudyMaterial): StudyMaterial {
   if (!mat) return mat;
+
+  // Extract or preserve course code
+  const extractedCourseCode =
+    mat.courseCode ||
+    extractCourseCode(undefined, mat.rawText, mat.title) ||
+    undefined;
+
+  // Determine correct subject based on course code, title, and rawText
+  let resolvedSubject = mat.subject;
+  if (extractedCourseCode) {
+    const expectedSubject = detectSubjectFromCodeOrTitle(extractedCourseCode, mat.rawText || mat.title);
+    // If it was wrongly carrying "Biology" or has an explicit course code, align subject
+    if (mat.subject === "Biology" && expectedSubject !== "Biology") {
+      resolvedSubject = expectedSubject;
+    } else if (!mat.subject) {
+      resolvedSubject = expectedSubject;
+    }
+  } else if (mat.title) {
+    const expectedSubject = detectSubjectFromCodeOrTitle(mat.title, mat.rawText || mat.title);
+    if (mat.subject === "Biology" && expectedSubject !== "Biology") {
+      resolvedSubject = expectedSubject;
+    }
+  }
+
   const hasGarbledDefs = (mat.definitions || []).some(
     (d) => isGarbledText(d.term) || isGarbledText(d.definition)
   );
@@ -574,7 +663,22 @@ export function sanitizeMaterial(mat: StudyMaterial): StudyMaterial {
   if (!hasGarbledDefs && !isTitleGarbled && !isSummaryGarbled && !isTextGarbled) {
     return {
       ...mat,
+      courseCode: extractedCourseCode,
+      subject: resolvedSubject,
       title: cleanTitle(mat.title),
+      summary: formatAcademicText(mat.summary),
+      definitions: (mat.definitions || []).map((d) => ({
+        term: stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(d.term))),
+        definition: formatAcademicText(d.definition),
+      })),
+      importantFacts: (mat.importantFacts || []).map((f) =>
+        stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(f)))
+      ),
+      keyConcepts: (mat.keyConcepts || []).map((k) => ({
+        ...k,
+        concept: stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(k.concept))),
+        explanation: formatAcademicText(k.explanation),
+      })),
     };
   }
 
@@ -584,16 +688,37 @@ export function sanitizeMaterial(mat: StudyMaterial): StudyMaterial {
     cleanTitle(mat.title)
   );
 
+  const sanitizedDefs = (features.definitions.length > 0 ? features.definitions : mat.definitions || []).map(
+    (d) => ({
+      term: stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(d.term))),
+      definition: formatAcademicText(d.definition),
+    })
+  );
+
+  const cleanSummary = isSummaryGarbled || !mat.summary
+    ? `Comprehensive academic study notes and diagnostic framework for ${cleanTitle(mat.title)}, focusing on core mechanisms, empirical relationships, and exam mastery.`
+    : formatAcademicText(mat.summary);
+
+  const cleanRawText = isTextGarbled || !mat.rawText
+    ? `Lecture notes for ${cleanTitle(mat.title)}:\n\n${sanitizedDefs.map((d) => `### ${d.term}\n${d.definition}`).join("\n\n")}`
+    : formatAcademicText(mat.rawText);
+
   return {
     ...mat,
+    courseCode: extractedCourseCode,
+    subject: resolvedSubject,
     title: cleanTitle(mat.title),
-    summary: isSummaryGarbled || !mat.summary
-      ? `Comprehensive academic study notes and diagnostic framework for ${cleanTitle(mat.title)}, focusing on core mechanisms, empirical relationships, and exam mastery.`
-      : mat.summary,
-    rawText: isTextGarbled || !mat.rawText
-      ? `Lecture notes for ${cleanTitle(mat.title)}:\n\n${features.definitions.map((d) => `### ${d.term}\n${d.definition}`).join("\n\n")}`
-      : mat.rawText,
-    definitions: features.definitions.length > 0 ? features.definitions : mat.definitions,
+    summary: cleanSummary,
+    rawText: cleanRawText,
+    definitions: sanitizedDefs,
+    importantFacts: (mat.importantFacts || []).map((f) =>
+      stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(f)))
+    ),
+    keyConcepts: (mat.keyConcepts || []).map((k) => ({
+      ...k,
+      concept: stripMarkdownToPlain(cleanLatexAndMath(cleanMojibake(k.concept))),
+      explanation: formatAcademicText(k.explanation),
+    })),
   };
 }
 
@@ -605,7 +730,8 @@ export function generateFallbackStudyPackage(
   subject: StudySubject,
   sourceType: SourceType,
   sourceUrl?: string,
-  fileUrl?: string
+  fileUrl?: string,
+  courseCode?: string
 ): {
   material: StudyMaterial;
   notes: StudyNotes;
@@ -615,13 +741,21 @@ export function generateFallbackStudyPackage(
 } {
   const title = cleanTitle(rawTitle);
   const cleanText = cleanToNaturalEnglish(rawContent);
+  const detectedCode =
+    courseCode ||
+    extractCourseCode(undefined, cleanText, title) ||
+    undefined;
+  const resolvedSubject = detectedCode
+    ? detectSubjectFromCodeOrTitle(detectedCode, cleanText)
+    : (subject || detectSubjectFromCodeOrTitle(title, cleanText) || "Other");
   const { definitions, importantFacts, keySentences } = extractTextFeatures(cleanText, title);
 
   // 1. Material
   const material: StudyMaterial = {
     id: materialId,
     title,
-    subject,
+    subject: resolvedSubject,
+    courseCode: detectedCode,
     sourceType,
     sourceUrl,
     fileUrl,
@@ -871,7 +1005,7 @@ export function generateFallbackStudyPackage(
       subject,
       rawContent,
       definitions,
-      cleanNotes.shortOverview,
+      notes.shortOverview,
       1
     ),
   };

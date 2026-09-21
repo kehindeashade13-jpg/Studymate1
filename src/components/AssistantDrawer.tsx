@@ -15,6 +15,7 @@ import {
   Layers,
   CheckCircle2,
 } from "lucide-react";
+import { CleanFormattedText } from "./CleanFormattedText";
 
 interface ChatMessage {
   id: string;
@@ -212,7 +213,12 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
         <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-1.5 text-[#0A1931] font-bold truncate">
             <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="text-[11px] text-slate-500">Connected File:</span>
+            <span className="text-[11px] text-slate-500">Connected:</span>
+            {currentConnectedMaterial?.courseCode && (
+              <span className="text-[10px] uppercase font-bold text-teal-700 bg-teal-100/80 px-2 py-0.5 rounded-full shrink-0">
+                {currentConnectedMaterial.courseCode}
+              </span>
+            )}
             <span className="truncate text-xs font-black">
               {currentConnectedMaterial ? currentConnectedMaterial.title : "No file connected"}
             </span>
@@ -301,7 +307,7 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
                   {isUser ? (
                     <p className="leading-relaxed whitespace-pre-line font-medium">{m.text}</p>
                   ) : (
-                    <div>{renderMessageContent(m.text)}</div>
+                    <CleanFormattedText content={m.text} />
                   )}
                   <span
                     className={`text-[9px] block mt-1.5 text-right ${

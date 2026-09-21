@@ -16,6 +16,7 @@ import {
   Plus,
 } from "lucide-react";
 import { QuizQuestion } from "../types";
+import { CleanFormattedText } from "./CleanFormattedText";
 
 export const QuizzesView: React.FC = () => {
   const {
@@ -153,7 +154,7 @@ export const QuizzesView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-500/20 text-amber-300">
-              {activeMaterial.subject}
+              {activeMaterial.courseCode || activeMaterial.subject}
             </span>
             {isWeakAreaMode && (
               <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-rose-500/20 text-rose-300">
@@ -197,9 +198,11 @@ export const QuizzesView: React.FC = () => {
 
           {/* Question Text */}
           <div>
-            <h3 className="text-base sm:text-lg font-bold text-white leading-relaxed">
-              {currentQ.question}
-            </h3>
+            <CleanFormattedText
+              as="h3"
+              content={currentQ.question}
+              className="text-base sm:text-lg font-bold text-white leading-relaxed"
+            />
           </div>
 
           {/* Options */}
@@ -216,7 +219,7 @@ export const QuizzesView: React.FC = () => {
                       : "bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800"
                   }`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <span
                       className={`w-6 h-6 rounded-full border text-xs flex items-center justify-center shrink-0 ${
                         isSelected
@@ -226,7 +229,7 @@ export const QuizzesView: React.FC = () => {
                     >
                       {String.fromCharCode(65 + idx)}
                     </span>
-                    <span>{opt}</span>
+                    <CleanFormattedText as="span" content={opt} className="break-words" />
                   </div>
                 </button>
               );
@@ -338,18 +341,21 @@ export const QuizzesView: React.FC = () => {
                     </span>
                   </div>
 
-                  <h4 className="text-sm font-bold text-white mb-3">{q.question}</h4>
+                  <CleanFormattedText as="h4" content={q.question} className="text-sm font-bold text-white mb-3" />
 
                   <div className="space-y-1.5 text-xs mb-3">
-                    <div className="text-slate-300">
+                    <div className="text-slate-300 flex items-center gap-1.5 flex-wrap">
                       <strong>Your Answer:</strong>{" "}
-                      <span className={isCorrect ? "text-emerald-300 font-semibold" : "text-rose-300 font-semibold"}>
-                        {userAns || "(No answer selected)"}
-                      </span>
+                      <CleanFormattedText
+                        as="span"
+                        content={userAns || "(No answer selected)"}
+                        className={isCorrect ? "text-emerald-300 font-semibold" : "text-rose-300 font-semibold"}
+                      />
                     </div>
                     {!isCorrect && (
-                      <div className="text-emerald-300">
-                        <strong>Correct Answer:</strong> {q.correctAnswer}
+                      <div className="text-emerald-300 flex items-center gap-1.5 flex-wrap">
+                        <strong>Correct Answer:</strong>{" "}
+                        <CleanFormattedText as="span" content={q.correctAnswer} className="text-emerald-300 font-medium" />
                       </div>
                     )}
                   </div>
@@ -357,7 +363,7 @@ export const QuizzesView: React.FC = () => {
                   {q.explanation && (
                     <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 leading-relaxed">
                       <strong className="text-blue-400 block mb-0.5">Why this matters:</strong>
-                      {q.explanation}
+                      <CleanFormattedText content={q.explanation} />
                     </div>
                   )}
                 </div>

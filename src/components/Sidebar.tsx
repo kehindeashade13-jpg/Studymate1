@@ -89,29 +89,36 @@ export const Sidebar: React.FC = () => {
   };
 
   // Helper for subject icon/color
-  const getSubjectMeta = (subject: string) => {
-    switch (subject.toLowerCase()) {
-      case "biology":
-        return { color: "text-emerald-600 bg-emerald-100", emoji: "🧬" };
-      case "mathematics":
-        return { color: "text-blue-600 bg-blue-100", emoji: "📐" };
-      case "chemistry":
-        return { color: "text-teal-600 bg-teal-100", emoji: "🧪" };
-      case "physics":
-        return { color: "text-cyan-600 bg-cyan-100", emoji: "⚛️" };
-      case "history":
-        return { color: "text-amber-600 bg-amber-100", emoji: "🏛️" };
-      case "computer science":
-        return { color: "text-indigo-600 bg-indigo-100", emoji: "💻" };
-      case "english":
-        return { color: "text-purple-600 bg-purple-100", emoji: "📖" };
-      case "business":
-        return { color: "text-rose-600 bg-rose-100", emoji: "📊" };
-      case "psychology":
-        return { color: "text-pink-600 bg-pink-100", emoji: "🧠" };
-      default:
-        return { color: "text-slate-600 bg-slate-100", emoji: "📚" };
+  const getSubjectMeta = (subjectOrCode: string) => {
+    const s = (subjectOrCode || "").toLowerCase();
+    if (s.includes("chem") || s.startsWith("chm") || s.includes("bch")) {
+      return { color: "text-teal-600 bg-teal-100", emoji: "🧪" };
     }
+    if (s.includes("bio") || s.startsWith("mcb") || s.startsWith("zoo") || s.startsWith("bot")) {
+      return { color: "text-emerald-600 bg-emerald-100", emoji: "🧬" };
+    }
+    if (s.includes("math") || s.startsWith("mth") || s.startsWith("mat") || s.startsWith("sta") || s.includes("calc")) {
+      return { color: "text-blue-600 bg-blue-100", emoji: "📐" };
+    }
+    if (s.includes("phys") || s.startsWith("phy")) {
+      return { color: "text-cyan-600 bg-cyan-100", emoji: "⚛️" };
+    }
+    if (s.includes("hist") || s.startsWith("his") || s.startsWith("pol")) {
+      return { color: "text-amber-600 bg-amber-100", emoji: "🏛️" };
+    }
+    if (s.includes("comp") || s.startsWith("csc") || s.startsWith("cos") || s.startsWith("cs") || s.startsWith("swe")) {
+      return { color: "text-indigo-600 bg-indigo-100", emoji: "💻" };
+    }
+    if (s.includes("eng") || s.startsWith("lit") || s.startsWith("gst")) {
+      return { color: "text-purple-600 bg-purple-100", emoji: "📖" };
+    }
+    if (s.includes("bus") || s.startsWith("eco") || s.startsWith("acc") || s.startsWith("fin")) {
+      return { color: "text-rose-600 bg-rose-100", emoji: "📊" };
+    }
+    if (s.includes("psyc") || s.startsWith("psy") || s.startsWith("soc")) {
+      return { color: "text-pink-600 bg-pink-100", emoji: "🧠" };
+    }
+    return { color: "text-slate-600 bg-slate-100", emoji: "📚" };
   };
 
   return (
@@ -234,7 +241,8 @@ export const Sidebar: React.FC = () => {
                 {materials.length > 0 ? (
                   <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                     {materials.map((mat) => {
-                      const meta = getSubjectMeta(mat.subject);
+                      const displayCode = mat.courseCode || mat.subject;
+                      const meta = getSubjectMeta(displayCode);
                       const isSelected = activeMaterial?.id === mat.id;
                       const cardCount = mat.definitions?.length || 10;
                       return (
@@ -250,10 +258,19 @@ export const Sidebar: React.FC = () => {
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <span className="text-base shrink-0">{meta.emoji}</span>
                             <div className="min-w-0 flex-1">
-                              <p className="font-bold text-xs text-[#0A1931] truncate leading-snug">
-                                {mat.title}
-                              </p>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="font-bold text-xs text-[#0A1931] truncate leading-snug">
+                                  {mat.title}
+                                </p>
+                                {mat.courseCode && (
+                                  <span className="text-[9px] font-bold text-teal-800 bg-teal-50 px-1 py-0.2 rounded border border-teal-200 shrink-0">
+                                    {mat.courseCode}
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex items-center gap-2 text-[10px] text-[#1B2A4A]/70">
+                                <span>{displayCode}</span>
+                                <span>•</span>
                                 <span>{cardCount} cards</span>
                                 <span>•</span>
                                 <span className="text-emerald-700 font-semibold">

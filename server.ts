@@ -29,18 +29,212 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
-// Clean JSON response from Gemini if wrapped in code blocks
+// Extract balanced JSON object or array ignoring braces and brackets inside strings
+function extractBalancedJson(text: string): string | null {
+  const firstBrace = text.indexOf("{");
+  const firstBracket = text.indexOf("[");
+  let startIdx = -1;
+  let openChar = "";
+  let closeChar = "";
+
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    startIdx = firstBrace;
+    openChar = "{";
+    closeChar = "}";
+  } else if (firstBracket !== -1) {
+    startIdx = firstBracket;
+    openChar = "[";
+    closeChar = "]";
+  } else {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const char = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (char === "\\") {
+      escape = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString) {
+      if (char === openChar) {
+        depth++;
+      } else if (char === closeChar) {
+        depth--;
+        if (depth === 0) {
+          return text.slice(startIdx, i + 1);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+// Remove trailing commas before } or ]
+function sanitizeJsonString(str: string): string {
+  return str.replace(/,\s*([}\]])/g, "$1");
+}
+
+// Clean and extract valid JSON response from Gemini, handling markdown fences,
+// trailing commentary, and V8 'Unexpected non-whitespace character after JSON' errors
 function cleanJsonResponse(raw: string): any {
-  let cleaned = raw.trim();
-  if (cleaned.startsWith("```json")) {
-    cleaned = cleaned.slice(7);
-  } else if (cleaned.startsWith("```")) {
-    cleaned = cleaned.slice(3);
+  if (!raw || typeof raw !== "string") {
+    return {};
   }
-  if (cleaned.endsWith("```")) {
-    cleaned = cleaned.slice(0, -3);
+
+  const trimmed = raw.trim();
+
+  // 1. Direct parse attempt
+  try {
+    return JSON.parse(trimmed);
+  } catch (err: any) {
+    // Specifically handle V8's "Unexpected non-whitespace character after JSON at position X"
+    const posMatch = err?.message?.match(/at position (\d+)/i);
+    if (posMatch) {
+      const pos = parseInt(posMatch[1], 10);
+      if (pos > 0 && pos <= trimmed.length) {
+        try {
+          return JSON.parse(trimmed.slice(0, pos).trim());
+        } catch (_) {}
+      }
+    }
   }
-  return JSON.parse(cleaned.trim());
+
+  // 2. Extract balanced JSON from the first { ... } or [ ... ]
+  const balanced = extractBalancedJson(trimmed);
+  if (balanced) {
+    try {
+      return JSON.parse(balanced);
+    } catch (err: any) {
+      const posMatch = err?.message?.match(/at position (\d+)/i);
+      if (posMatch) {
+        const pos = parseInt(posMatch[1], 10);
+        if (pos > 0 && pos <= balanced.length) {
+          try {
+            return JSON.parse(balanced.slice(0, pos).trim());
+          } catch (_) {}
+        }
+      }
+      try {
+        return JSON.parse(sanitizeJsonString(balanced));
+      } catch (_) {}
+    }
+  }
+
+  // 3. Try stripping markdown code blocks ```json ... ```
+  let unFenced = trimmed;
+  const codeBlockMatch = unFenced.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    unFenced = codeBlockMatch[1].trim();
+    try {
+      return JSON.parse(unFenced);
+    } catch (err: any) {
+      const posMatch = err?.message?.match(/at position (\d+)/i);
+      if (posMatch) {
+        const pos = parseInt(posMatch[1], 10);
+        if (pos > 0 && pos <= unFenced.length) {
+          try {
+            return JSON.parse(unFenced.slice(0, pos).trim());
+          } catch (_) {}
+        }
+      }
+      const balancedFromFence = extractBalancedJson(unFenced);
+      if (balancedFromFence) {
+        try {
+          return JSON.parse(balancedFromFence);
+        } catch (_) {}
+      }
+    }
+  }
+
+  // 4. Try from first { to last } (or first [ to last ])
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = trimmed.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {
+      try {
+        return JSON.parse(sanitizeJsonString(candidate));
+      } catch (_) {}
+    }
+  }
+
+  const firstBracket = trimmed.indexOf("[");
+  const lastBracket = trimmed.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    const candidate = trimmed.slice(firstBracket, lastBracket + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch (_) {
+      try {
+        return JSON.parse(sanitizeJsonString(candidate));
+      } catch (_) {}
+    }
+  }
+
+  // 5. Truncated repair: If LLM output got cut off before closing quotes / braces
+  try {
+    let candidate = unFenced;
+    const startObj = candidate.indexOf("{");
+    const startArr = candidate.indexOf("[");
+    let startIdx = -1;
+    if (startObj !== -1 && (startArr === -1 || startObj < startArr)) {
+      startIdx = startObj;
+    } else if (startArr !== -1) {
+      startIdx = startArr;
+    }
+    if (startIdx !== -1) {
+      candidate = candidate.slice(startIdx);
+      const stack: string[] = [];
+      let inStr = false;
+      let esc = false;
+      for (let i = 0; i < candidate.length; i++) {
+        const c = candidate[i];
+        if (esc) {
+          esc = false;
+          continue;
+        }
+        if (c === "\\") {
+          esc = true;
+          continue;
+        }
+        if (c === '"') {
+          inStr = !inStr;
+          continue;
+        }
+        if (!inStr) {
+          if (c === "{" || c === "[") stack.push(c);
+          else if (c === "}" && stack.length && stack[stack.length - 1] === "{") stack.pop();
+          else if (c === "]" && stack.length && stack[stack.length - 1] === "[") stack.pop();
+        }
+      }
+      if (inStr) candidate += '"';
+      candidate = candidate.trim().replace(/,\s*$/, "");
+      while (stack.length > 0) {
+        const unclosed = stack.pop();
+        if (unclosed === "{") candidate += "}";
+        else if (unclosed === "[") candidate += "]";
+      }
+      return JSON.parse(sanitizeJsonString(candidate));
+    }
+  } catch (_) {}
+
+  // Last attempt: standard JSON.parse which will provide descriptive syntax error
+  return JSON.parse(trimmed);
 }
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
@@ -88,6 +282,64 @@ async function generateContentWithRetry(
     }
   }
   throw lastError || new Error("All candidate Gemini models failed");
+}
+
+// Global encoding and mojibake normalization helper for all extracted files and prompts
+function normalizeDocumentEncoding(input: string): string {
+  if (!input || typeof input !== "string") return "";
+  let res = input;
+  res = res
+    .replace(/â€™/g, "’")
+    .replace(/â€˜/g, "‘")
+    .replace(/â€œ/g, "“")
+    .replace(/â€\x9d/g, "”")
+    .replace(/â€/g, "”")
+    .replace(/â€”/g, "—")
+    .replace(/â€“/g, "–")
+    .replace(/â€¦/g, "…")
+    .replace(/â€¢/g, "•")
+    .replace(/Ã©/g, "é")
+    .replace(/Ã¨/g, "è")
+    .replace(/Ãª/g, "ê")
+    .replace(/Ã«/g, "ë")
+    .replace(/Ã /g, "à")
+    .replace(/Ã¡/g, "á")
+    .replace(/Ã¢/g, "â")
+    .replace(/Ã£/g, "ã")
+    .replace(/Ã®/g, "î")
+    .replace(/Ã¯/g, "ï")
+    .replace(/Ã­/g, "í")
+    .replace(/Ã¬/g, "ì")
+    .replace(/Ã´/g, "ô")
+    .replace(/Ã³/g, "ó")
+    .replace(/Ã²/g, "ò")
+    .replace(/Ãµ/g, "õ")
+    .replace(/Ã¹/g, "ù")
+    .replace(/Ãº/g, "ú")
+    .replace(/Ã»/g, "û")
+    .replace(/Ã¼/g, "ü")
+    .replace(/Ã¶/g, "ö")
+    .replace(/Ã¤/g, "ä")
+    .replace(/Ã±/g, "ñ")
+    .replace(/Ã§/g, "ç")
+    .replace(/ÃŸ/g, "ß")
+    .replace(/Ã‰/g, "É")
+    .replace(/Ãˆ/g, "È")
+    .replace(/Ã€/g, "À")
+    .replace(/Ã‚/g, "Â")
+    .replace(/Ã”/g, "Ô")
+    .replace(/Ã›/g, "Û")
+    .replace(/Ãœ/g, "Ü")
+    .replace(/Ã–/g, "Ö")
+    .replace(/Ã„/g, "Ä")
+    .replace(/Ã‘/g, "Ñ")
+    .replace(/Ã‡/g, "Ç")
+    .replace(/\uFFFD/g, "")
+    .replace(/[\u25A0-\u25FF]+/g, " ")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  return res.trim();
 }
 
 // Helper to verify that extracted text is legible academic English/symbols and not corrupted font bytes
@@ -156,6 +408,10 @@ app.post("/api/extract-document", async (req, res) => {
           candidateText = typeof textResult === "string" ? textResult : ((textResult as any)?.text || "");
         }
 
+        if (candidateText) {
+          candidateText = normalizeDocumentEncoding(candidateText);
+        }
+
         if (candidateText && isLegibleAcademicText(candidateText)) {
           return res.json({ success: true, text: candidateText });
         } else if (candidateText) {
@@ -181,8 +437,11 @@ app.post("/api/extract-document", async (req, res) => {
             "You are an expert academic tutor and OCR engine. Extract all readable text, titles, lecture slide content, formulas, chemical equations, definitions, and key topics from this study document in clean, natural English prose and markdown. Do not output raw binary tokens, unmapped font symbols, or corrupted characters. If any part is faint or handwritten, transcribe it accurately in standard English.",
           ],
         });
-        if (response?.text && isLegibleAcademicText(response.text)) {
-          return res.json({ success: true, text: response.text.trim() });
+        if (response?.text) {
+          const cleanedText = normalizeDocumentEncoding(response.text);
+          if (isLegibleAcademicText(cleanedText)) {
+            return res.json({ success: true, text: cleanedText });
+          }
         }
       } catch (geminiErr: any) {
         console.warn("Gemini document extraction notice:", geminiErr?.message);
@@ -1410,7 +1669,7 @@ Material:
 ${content.slice(0, 12000)}
 """
 
-Return ONLY a JSON object:
+Return ONLY a valid JSON object without markdown fences, backticks, or extra commentary:
 {
   "subject": string,
   "totalLessons": 6,
@@ -1453,6 +1712,33 @@ Return ONLY a JSON object:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
+      if (parsed && (Array.isArray(parsed.lessons) || Array.isArray(parsed.steps))) {
+        const rawLessonsList = parsed.lessons || parsed.steps;
+        const normalized = rawLessonsList.map((l: any, idx: number) => {
+          const lNum = l.lessonNumber || idx + 1;
+          const questions = Array.isArray(l.questions) && l.questions.length > 0
+            ? l.questions
+            : (l.knowledgeCheck ? [l.knowledgeCheck] : get5LessonQuestions(lNum, l.title || title));
+          return {
+            lessonNumber: lNum,
+            title: l.title || `Lesson ${lNum}`,
+            subtitle: l.subtitle || "Mastery of mechanisms and concepts",
+            content: l.content || "",
+            analogy: l.analogy || "",
+            keyTerms: Array.isArray(l.keyTerms) ? l.keyTerms : [],
+            knowledgeCheck: l.knowledgeCheck || questions[0],
+            questions: questions.length >= 5 ? questions : [...questions, ...get5LessonQuestions(lNum, l.title || title).slice(questions.length)],
+          };
+        });
+        return res.json({
+          success: true,
+          data: {
+            subject: parsed.subject || title,
+            totalLessons: normalized.length,
+            lessons: normalized,
+          },
+        });
+      }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
       console.warn("Gemini generate-lesson failed, using fallback:", err?.message);
