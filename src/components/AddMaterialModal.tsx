@@ -47,7 +47,7 @@ export const AddMaterialModal: React.FC = () => {
 
   const [activeImportType, setActiveImportType] = useState<SourceType>(initialImportType || "upload");
   const [courseCode, setCourseCode] = useState<string>("");
-  const [subject, setSubject] = useState<StudySubject>("Chemistry");
+  const [subject, setSubject] = useState<StudySubject>("Other");
   const [title, setTitle] = useState(initialImportQuery || "");
   const [content, setContent] = useState("");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -155,6 +155,8 @@ export const AddMaterialModal: React.FC = () => {
     if (detectedCode) {
       setCourseCode(detectedCode);
       setSubject(detectSubjectFromCodeOrTitle(detectedCode));
+    } else {
+      setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle));
     }
 
     if (!title) {
@@ -168,56 +170,44 @@ export const AddMaterialModal: React.FC = () => {
 
       if (file.type.startsWith("image/")) {
         setImagePreview(dataUrl);
-        setContent(
-          `# Scanned Document: ${cleanDocTitle}\n\n[Study material image loaded for optical OCR extraction. Visual diagrams, formulas, and textbook excerpts prepared for AI analysis.]`
-        );
-      } else if (file.type === "application/pdf" || fileName.toLowerCase().endsWith(".pdf")) {
-        setIsExtractingDoc(true);
-        setContent(`Extracting readable lecture notes and formulas from "${fileName}"...`);
-        try {
-          const res = await fetch("/api/extract-document", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              base64: dataUrl,
-              mimeType: "application/pdf",
-              fileName,
-            }),
-          });
-          const json = await res.json();
-          if (json?.success && json.text && json.text.trim().length > 30) {
-            const cleanText = cleanToNaturalEnglish(json.text);
-            setContent(cleanText);
-            const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
-            if (codeFromContent) {
-              setCourseCode(codeFromContent);
-              setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
-            }
-          } else {
-            setContent(
-              `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`
-            );
-          }
-        } catch {
-          setContent(
-            `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`
-          );
-        } finally {
-          setIsExtractingDoc(false);
-        }
-      } else {
-        try {
-          const text = atob(dataUrl.split(",")[1] || "");
-          const cleanText = cleanToNaturalEnglish(text);
-          setContent(cleanText || `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`);
+      }
+
+      setIsExtractingDoc(true);
+      setContent(`Extracting readable lecture notes and academic content from "${fileName}"...`);
+
+      try {
+        const res = await fetch("/api/extract-document", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            base64: dataUrl,
+            mimeType: file.type || (fileName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream"),
+            fileName,
+          }),
+        });
+        const json = await res.json();
+        if (json?.success && json.text && json.text.trim().length > 15) {
+          const cleanText = cleanToNaturalEnglish(json.text);
+          setContent(cleanText);
           const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
           if (codeFromContent) {
             setCourseCode(codeFromContent);
             setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
+          } else {
+            setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle, cleanText));
           }
-        } catch {
-          setContent(`# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}.`);
+        } else {
+          setContent(
+            `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
+          );
         }
+      } catch (extractErr) {
+        console.warn("Document extraction error:", extractErr);
+        setContent(
+          `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
+        );
+      } finally {
+        setIsExtractingDoc(false);
       }
     };
     reader.readAsDataURL(file);
@@ -328,7 +318,7 @@ export const AddMaterialModal: React.FC = () => {
 
     try {
       // 1. Fetch material analysis with a 9s safety timeout
-      const analyzeData = await safeFetchJson<any>(
+      const rawAnalyzeData = await safeFetchJson<any>(
         "/api/gemini/analyze",
         {
           title: finalTitle,
@@ -338,50 +328,59 @@ export const AddMaterialModal: React.FC = () => {
         9000
       );
 
-      if (analyzeData) {
+      const analyzeData = rawAnalyzeData?.data || rawAnalyzeData;
+      if (analyzeData && typeof analyzeData === "object") {
         resolvedMaterial = {
           ...resolvedMaterial,
           summary: analyzeData.summary || resolvedMaterial.summary,
-          mainTopics: analyzeData.mainTopics?.length ? analyzeData.mainTopics : resolvedMaterial.mainTopics,
-          subtopics: analyzeData.subtopics?.length ? analyzeData.subtopics : resolvedMaterial.subtopics,
-          keyConcepts: analyzeData.keyConcepts?.length ? analyzeData.keyConcepts : resolvedMaterial.keyConcepts,
-          definitions: analyzeData.definitions?.length ? analyzeData.definitions : resolvedMaterial.definitions,
-          importantFacts: analyzeData.importantFacts?.length ? analyzeData.importantFacts : resolvedMaterial.importantFacts,
-          relationships: analyzeData.relationships?.length ? analyzeData.relationships : resolvedMaterial.relationships,
-          examples: analyzeData.examples?.length ? analyzeData.examples : resolvedMaterial.examples,
-          formulas: analyzeData.formulas?.length ? analyzeData.formulas : resolvedMaterial.formulas,
-          importantDates: analyzeData.importantDates?.length ? analyzeData.importantDates : resolvedMaterial.importantDates,
-          potentialExamQuestions: analyzeData.potentialExamQuestions?.length ? analyzeData.potentialExamQuestions : resolvedMaterial.potentialExamQuestions,
-          chunks: analyzeData.chunks?.length ? analyzeData.chunks : resolvedMaterial.chunks,
+          mainTopics: Array.isArray(analyzeData.mainTopics) && analyzeData.mainTopics.length ? analyzeData.mainTopics : resolvedMaterial.mainTopics,
+          subtopics: Array.isArray(analyzeData.subtopics) && analyzeData.subtopics.length ? analyzeData.subtopics : resolvedMaterial.subtopics,
+          keyConcepts: Array.isArray(analyzeData.keyConcepts) && analyzeData.keyConcepts.length ? analyzeData.keyConcepts : resolvedMaterial.keyConcepts,
+          definitions: Array.isArray(analyzeData.definitions) && analyzeData.definitions.length ? analyzeData.definitions : resolvedMaterial.definitions,
+          importantFacts: Array.isArray(analyzeData.importantFacts) && analyzeData.importantFacts.length ? analyzeData.importantFacts : resolvedMaterial.importantFacts,
+          relationships: Array.isArray(analyzeData.relationships) && analyzeData.relationships.length ? analyzeData.relationships : resolvedMaterial.relationships,
+          examples: Array.isArray(analyzeData.examples) && analyzeData.examples.length ? analyzeData.examples : resolvedMaterial.examples,
+          formulas: Array.isArray(analyzeData.formulas) && analyzeData.formulas.length ? analyzeData.formulas : resolvedMaterial.formulas,
+          importantDates: Array.isArray(analyzeData.importantDates) && analyzeData.importantDates.length ? analyzeData.importantDates : resolvedMaterial.importantDates,
+          potentialExamQuestions: Array.isArray(analyzeData.potentialExamQuestions) && analyzeData.potentialExamQuestions.length ? analyzeData.potentialExamQuestions : resolvedMaterial.potentialExamQuestions,
+          chunks: Array.isArray(analyzeData.chunks) && analyzeData.chunks.length ? analyzeData.chunks : resolvedMaterial.chunks,
         };
       }
 
       // 2. Fetch specialized study assets in parallel with 15s safety timeout
-      const [notesRes, flashcardsRes, quizRes, lessonRes] = await Promise.all([
+      const [rawNotesRes, rawFlashcardsRes, rawQuizRes, rawLessonRes] = await Promise.all([
         safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 15000),
         safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 15000),
         safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 15000),
         safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 15000),
       ]);
 
-      if (notesRes) {
+      const notesRes = rawNotesRes?.data || rawNotesRes;
+      if (notesRes && typeof notesRes === "object" && (notesRes.keyConcepts || notesRes.definitions || notesRes.shortOverview || notesRes.detailedNotes)) {
         resolvedNotes = {
           ...resolvedNotes,
           ...notesRes,
+          topicTitle: notesRes.topicTitle || finalTitle,
           id: `notes-${newMaterialId}`,
           materialId: newMaterialId,
         };
       }
 
-      if (flashcardsRes?.flashcards) {
+      const flashcardsRes = rawFlashcardsRes?.data || rawFlashcardsRes;
+      if (flashcardsRes && Array.isArray(flashcardsRes.flashcards) && flashcardsRes.flashcards.length > 0) {
         resolvedFlashcards = {
           ...resolvedFlashcards,
           ...flashcardsRes,
+          flashcards: flashcardsRes.flashcards,
+          mnemonics: Array.isArray(flashcardsRes.mnemonics) && flashcardsRes.mnemonics.length > 0 ? flashcardsRes.mnemonics : resolvedFlashcards.mnemonics,
+          fillInTheBlanks: Array.isArray(flashcardsRes.fillInTheBlanks) && flashcardsRes.fillInTheBlanks.length > 0 ? flashcardsRes.fillInTheBlanks : resolvedFlashcards.fillInTheBlanks,
+          recallQuestions: Array.isArray(flashcardsRes.recallQuestions) && flashcardsRes.recallQuestions.length > 0 ? flashcardsRes.recallQuestions : resolvedFlashcards.recallQuestions,
           materialId: newMaterialId,
         };
       }
 
-      if (quizRes?.questions && Array.isArray(quizRes.questions)) {
+      const quizRes = rawQuizRes?.data || rawQuizRes;
+      if (quizRes && Array.isArray(quizRes.questions) && quizRes.questions.length > 0) {
         const cleanQs = quizRes.questions.filter((q: any) => {
           const txt = (q.question + " " + (q.options || []).join(" ")).toLowerCase();
           return !txt.includes("uploaded study file") && !txt.includes("uploaded file");
@@ -397,17 +396,23 @@ export const AddMaterialModal: React.FC = () => {
         resolvedQuiz = {
           ...resolvedQuiz,
           ...quizRes,
+          quizTitle: quizRes.quizTitle || `${finalTitle} Diagnostic Assessment`,
           questions: combinedQs.slice(0, 20),
           id: `quiz-${newMaterialId}`,
           materialId: newMaterialId,
         };
       }
 
-      if (lessonRes?.lessons || lessonRes?.steps) {
+      const lessonRes = rawLessonRes?.data || rawLessonRes;
+      const lessonSteps = lessonRes?.lessons || lessonRes?.steps;
+      if (Array.isArray(lessonSteps) && lessonSteps.length > 0) {
         resolvedLesson = {
           ...resolvedLesson,
           ...lessonRes,
-          lessons: lessonRes.lessons || lessonRes.steps,
+          title: lessonRes.title || `Interactive Step-by-Step Lesson: ${finalTitle}`,
+          subject: finalSubject,
+          totalLessons: lessonSteps.length,
+          lessons: lessonSteps,
           id: `lesson-${newMaterialId}`,
           materialId: newMaterialId,
         };

@@ -406,9 +406,53 @@ app.post("/api/extract-document", async (req, res) => {
 
     const cleanBase64 = base64.replace(/^data:[^;]+;base64,/, "");
     const buffer = Buffer.from(cleanBase64, "base64");
+    const lowerFileName = (fileName || "").toLowerCase();
 
-    // 1. Try native PDF parser for PDFs, but STRICTLY validate legibility
-    const isPdf = mimeType === "application/pdf" || fileName?.toLowerCase().endsWith(".pdf");
+    // 1. Plain text / Markdown / CSV / JSON files
+    const isTextFile =
+      mimeType?.startsWith("text/") ||
+      lowerFileName.endsWith(".txt") ||
+      lowerFileName.endsWith(".md") ||
+      lowerFileName.endsWith(".csv") ||
+      lowerFileName.endsWith(".json") ||
+      lowerFileName.endsWith(".rtf");
+
+    if (isTextFile) {
+      try {
+        const decodedText = buffer.toString("utf-8");
+        const normalized = normalizeDocumentEncoding(decodedText);
+        if (normalized && normalized.trim().length > 10) {
+          return res.json({ success: true, text: normalized });
+        }
+      } catch (textErr) {
+        console.warn("Text decoding notice:", textErr);
+      }
+    }
+
+    // 2. Word documents (.docx, .doc) via mammoth
+    const isWordDoc =
+      mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      mimeType === "application/msword" ||
+      lowerFileName.endsWith(".docx") ||
+      lowerFileName.endsWith(".doc");
+
+    if (isWordDoc) {
+      try {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer });
+        if (result && result.value) {
+          const docxText = normalizeDocumentEncoding(result.value);
+          if (docxText && docxText.trim().length > 10) {
+            return res.json({ success: true, text: docxText });
+          }
+        }
+      } catch (docErr) {
+        console.warn("Mammoth docx extraction notice:", docErr);
+      }
+    }
+
+    // 3. Try native PDF parser for PDFs, validating legibility
+    const isPdf = mimeType === "application/pdf" || lowerFileName.endsWith(".pdf");
     if (isPdf) {
       try {
         const pdfModule = await import("pdf-parse");
@@ -433,34 +477,40 @@ app.post("/api/extract-document", async (req, res) => {
           candidateText = normalizeDocumentEncoding(candidateText);
         }
 
-        if (candidateText && isLegibleAcademicText(candidateText)) {
+        if (candidateText && isLegibleAcademicText(candidateText) && candidateText.trim().length > 30) {
           return res.json({ success: true, text: candidateText });
         } else if (candidateText) {
-          console.warn("Native PDF parser returned unmapped font bytes or illegible glyphs; routing directly to Gemini OCR vision.");
+          console.warn("Native PDF parser returned unmapped font bytes or short text; routing directly to Gemini OCR vision.");
         }
       } catch (pdfErr) {
         console.warn("PDFParse parsing notice:", pdfErr);
       }
     }
 
-    // 2. High-fidelity Gemini Multimodal OCR extraction for scanned PDFs, images, or documents
+    // 4. High-fidelity Gemini Multimodal OCR extraction for scanned PDFs, images, slides, or documents
     const ai = getGeminiClient();
     if (ai) {
       try {
+        const effectiveMimeType = isPdf
+          ? "application/pdf"
+          : mimeType && mimeType.startsWith("image/")
+          ? mimeType
+          : "image/jpeg";
+
         const response = await generateContentWithRetry(ai, {
           contents: [
             {
               inlineData: {
                 data: cleanBase64,
-                mimeType: mimeType || (isPdf ? "application/pdf" : "image/jpeg"),
+                mimeType: effectiveMimeType,
               },
             },
-            "You are an expert academic tutor and OCR engine. Extract all readable text, titles, lecture slide content, formulas, chemical equations, definitions, and key topics from this study document in clean, natural English prose and markdown. Do not output raw binary tokens, unmapped font symbols, or corrupted characters. If any part is faint or handwritten, transcribe it accurately in standard English.",
+            "You are an expert academic tutor and OCR engine. Extract all readable text, lecture titles, slide content, chemical formulas, mathematical notations, definitions, key concepts, explanations, and practice questions from this study document in clean, natural English prose and markdown. Transcribe accurately and preserve all academic knowledge from the file.",
           ],
         });
         if (response?.text) {
           const cleanedText = normalizeDocumentEncoding(response.text);
-          if (isLegibleAcademicText(cleanedText)) {
+          if (cleanedText && cleanedText.trim().length > 20) {
             return res.json({ success: true, text: cleanedText });
           }
         }
@@ -468,6 +518,14 @@ app.post("/api/extract-document", async (req, res) => {
         console.warn("Gemini document extraction notice:", geminiErr?.message);
       }
     }
+
+    // 5. Final fallback text decoding
+    try {
+      const fallbackText = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{2,}/g, " ").trim();
+      if (fallbackText.length > 50 && isLegibleAcademicText(fallbackText)) {
+        return res.json({ success: true, text: fallbackText });
+      }
+    } catch {}
 
     return res.json({ success: false, text: "" });
   } catch (err: any) {

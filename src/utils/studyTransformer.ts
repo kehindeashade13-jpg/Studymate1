@@ -78,11 +78,14 @@ export function extractCourseCode(
     }
   }
 
-  // 2. Academic course code pattern: 2-4 letters followed by 2-4 digits (with optional letter)
-  // E.g. CHM 203, CHM203, CHM-203, BIO 101, MTH 201, PHY 102, CSC 311, GST 101, ENG 101
-  const nonCourseWords = new Set([
-    "PAGE", "STEP", "CHAP", "NOTE", "PART", "UNIT", "ITEM", "YEAR", "ROOM", "DATE",
-    "TIME", "SECT", "RULE", "FORM", "TEST", "WEEK", "TERM", "DECK", "CARD", "BOOK"
+  // 2. Recognized academic course department prefixes
+  const knownPrefixes = new Set([
+    "CHM", "CHEM", "BIO", "BIOL", "MCB", "BCH", "PHY", "PHYS",
+    "MTH", "MATH", "MAT", "STA", "CSC", "COS", "CMP", "SWE",
+    "ENG", "ENGL", "GST", "GNS", "ECO", "ECN", "BUS", "ACC",
+    "FIN", "MGT", "HIS", "HIST", "PSY", "PSYC", "SOC", "POL",
+    "POS", "GEO", "LAW", "MED", "NUR", "PHM", "AGR", "EDU",
+    "ARC", "CVE", "MEE", "EEE", "CHE", "PTE", "FST"
   ]);
 
   for (const src of sources) {
@@ -90,8 +93,9 @@ export function extractCourseCode(
     for (const match of codeMatches) {
       const letters = match[1].toUpperCase();
       const numbers = match[2].toUpperCase();
-      if (nonCourseWords.has(letters)) continue;
-      return `${letters} ${numbers}`;
+      if (knownPrefixes.has(letters)) {
+        return `${letters} ${numbers}`;
+      }
     }
   }
 
@@ -141,7 +145,7 @@ export function detectSubjectFromCodeOrTitle(
   if (/\b(PSY|PSYC|PSYCHOLOGY|BEHAVIOR|COGNITIVE|THERAPY|SOC|SOCIOLOGY)\b/.test(textToScan)) {
     return "Psychology";
   }
-  return "Chemistry";
+  return "Other";
 }
 
 // Clean course or subject prefixes and author / phone number suffixes from material titles

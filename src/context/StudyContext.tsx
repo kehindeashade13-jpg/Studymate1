@@ -123,6 +123,14 @@ interface StudyContextType {
   sendFriendRequest: (friendId: string) => void;
   addFriend: (friendData: Omit<StudyFriend, "id"> | Partial<StudyFriend>) => void;
   removeFriend: (friendId: string) => void;
+  startDirectChatWithFriend: (friend: {
+    id: string;
+    name: string;
+    avatar?: string;
+    phoneNumber?: string;
+    school?: string;
+    subjects?: StudySubject[];
+  }) => void;
   updatePrivacySettings: (settings: { isProfilePublic: boolean; allowFriendRequests: boolean; allowGroupInvites: boolean }) => void;
 
   // Study Plan
@@ -933,13 +941,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     attachments?: GroupMessage["attachments"],
     senderOverride?: { id: string; name: string; avatar: string }
   ) => {
-    const senderId = senderOverride ? senderOverride.id : isAi ? "ai-assistant" : user.id;
-    const senderName = senderOverride ? senderOverride.name : isAi ? "StudyMate AI" : user.name;
-    const senderAvatar = senderOverride
-      ? senderOverride.avatar
-      : isAi
-      ? "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80"
-      : user.avatar;
+    const senderId = senderOverride ? senderOverride.id : user.id;
+    const senderName = senderOverride ? senderOverride.name : user.name;
+    const senderAvatar = senderOverride ? senderOverride.avatar : user.avatar;
 
     const newMsg: GroupMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -947,9 +951,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       senderId,
       senderName,
       senderAvatar,
-      timestamp: "Just now",
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       text,
-      isAi,
+      isAi: false,
       reactions: {},
       attachments: attachments && attachments.length > 0 ? attachments : undefined,
     };
@@ -958,48 +962,6 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ...prev,
       [groupId]: [...(prev[groupId] || []), newMsg],
     }));
-
-    // If the message was sent by the main user, allow peer friends in this group to respond!
-    if (!isAi && !senderOverride) {
-      const targetGroup = studyGroups.find((g) => g.id === groupId);
-      const peerFriends = targetGroup ? targetGroup.members.filter((m) => m.id !== user.id) : [];
-
-      if (peerFriends.length > 0) {
-        const randomFriend = peerFriends[Math.floor(Math.random() * peerFriends.length)];
-        setTimeout(() => {
-          let peerReply = `Thanks for sending this, ${user.name}! Let's review it together.`;
-          const lower = text.toLowerCase();
-          if (attachments && attachments.length > 0) {
-            peerReply = `Got it! I just opened "${attachments[0].title}". The flashcards and definitions look super helpful! 💡`;
-          } else if (lower.includes("quiz") || lower.includes("practice") || lower.includes("exam")) {
-            peerReply = `Great idea! I was just preparing for that exam. Want to do a fast round of 5 questions? 🎯`;
-          } else if (lower.includes("deck") || lower.includes("notes") || lower.includes("read")) {
-            peerReply = `Awesome notes! I'm adding this deck to my active study plan for tonight.`;
-          } else if (lower.includes("hello") || lower.includes("hey") || lower.includes("hi")) {
-            peerReply = `Hey ${user.name}! Ready to study and master these concepts.`;
-          } else if (lower.includes("?") || lower.includes("how") || lower.includes("what")) {
-            peerReply = `Good question! We can also ask our AI Tutor to break down the exact mechanism step by step.`;
-          }
-
-          sendGroupMessage(groupId, peerReply, false, undefined, {
-            id: randomFriend.id,
-            name: randomFriend.name,
-            avatar: randomFriend.avatar,
-          });
-        }, 1500);
-      }
-
-      // If user specifically asked for AI tutor assistance
-      if (text.includes("AI") || text.includes("explain")) {
-        setTimeout(() => {
-          sendGroupMessage(
-            groupId,
-            "💡 **StudyMate AI Insight**: Remember that active recall and self-quizzing retain up to 80% more than passive reading. Keep asking questions!",
-            true
-          );
-        }, 3000);
-      }
-    }
   };
 
   const shareMaterialWithGroup = (groupId: string, materialId: string) => {
@@ -1030,10 +992,10 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     });
 
-    // Also post an automatic announcement in group chat with attachment
+    // Post an announcement in group chat with attachment
     sendGroupMessage(
       groupId,
-      `Shared a study material with the group: **${mat.title}** (${mat.subject}). Check it out in the materials tab or review it together!`,
+      `Shared study deck: **${mat.title}** (${mat.subject}). Ready to review flashcards, notes, or quiz questions!`,
       false,
       [
         {
@@ -1088,8 +1050,12 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const addFriend = (friendData: Omit<StudyFriend, "id"> | Partial<StudyFriend>) => {
+    // Avoid duplicate friends
+    if (friendData.name && friends.some((f) => f.name.toLowerCase() === friendData.name!.toLowerCase())) {
+      return;
+    }
     const newFriend: StudyFriend = {
-      id: `friend-${Date.now()}`,
+      id: `friend-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
       name: friendData.name || "Study Partner",
       avatar: friendData.avatar || "/studymate_logo.jpg",
       subjects: friendData.subjects || ["General Studies"],
@@ -1098,7 +1064,8 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       goals: friendData.goals || "Collaborating on coursework and exam preparation.",
       mutualSubjectsCount: 1,
       status: "connected",
-      ...friendData,
+      phoneNumber: friendData.phoneNumber || "+1 (555) 234-5678",
+      email: friendData.email,
     };
     setFriends((prev) => [newFriend, ...prev]);
     addXP(25, "Added study partner");
@@ -1107,6 +1074,70 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const removeFriend = (friendId: string) => {
     setFriends((prev) => prev.filter((f) => f.id !== friendId));
+  };
+
+  const startDirectChatWithFriend = (friend: {
+    id: string;
+    name: string;
+    avatar?: string;
+    phoneNumber?: string;
+    school?: string;
+    subjects?: StudySubject[];
+  }) => {
+    // Check if a direct chat group with this friend already exists
+    const existing = studyGroups.find(
+      (g) =>
+        g.members.some(
+          (m) =>
+            m.id === friend.id ||
+            (friend.phoneNumber && m.phoneNumber === friend.phoneNumber) ||
+            m.name.toLowerCase().includes(friend.name.toLowerCase())
+        ) && g.members.length <= 2
+    );
+
+    if (existing) {
+      setActiveGroup(existing);
+      setActiveTab("groups");
+      return;
+    }
+
+    const newGroup: StudyGroup = {
+      id: `direct-chat-${Date.now()}`,
+      name: `Study Circle with ${friend.name}`,
+      subject: (friend.subjects && friend.subjects[0]) || "Biology",
+      description: `Direct 1-on-1 study circle with ${friend.name} (${friend.phoneNumber || "StudyMate Peer"}).`,
+      isPrivate: true,
+      examDate: "Collaborative Study",
+      progressPercent: 0,
+      members: [
+        {
+          id: user.id,
+          name: `${user.name} (Admin)`,
+          avatar: user.avatar,
+          role: "admin",
+          isOnline: true,
+          studyStreak: user.streakDays || 0,
+          phoneNumber: user.phoneNumber,
+          institution: user.institution,
+        },
+        {
+          id: friend.id || `peer-${Date.now()}`,
+          name: friend.name,
+          avatar: friend.avatar || "/studymate_logo.jpg",
+          role: "member",
+          isOnline: true,
+          studyStreak: 4,
+          phoneNumber: friend.phoneNumber,
+          institution: friend.school || "StudyMate Student",
+        },
+      ],
+      sharedMaterialIds: materials.length > 0 ? [materials[0].id] : [],
+    };
+
+    setStudyGroups((prev) => [newGroup, ...prev]);
+    setActiveGroup(newGroup);
+    setActiveTab("groups");
+    triggerConfetti();
   };
 
   const updatePrivacySettings = (settings: {
@@ -1246,6 +1277,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         sendFriendRequest,
         addFriend,
         removeFriend,
+        startDirectChatWithFriend,
         updatePrivacySettings,
         studyPlan,
         setStudyPlan,

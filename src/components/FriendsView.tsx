@@ -27,6 +27,7 @@ export const FriendsView: React.FC = () => {
     friends,
     addFriend,
     removeFriend,
+    startDirectChatWithFriend,
     updatePrivacySettings,
     setActiveTab,
     triggerConfetti,
@@ -468,10 +469,16 @@ export const FriendsView: React.FC = () => {
                   </div>
 
                   {/* Connected Actions */}
-                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 stroke-[2.5]" /> Connected
-                    </span>
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        startDirectChatWithFriend(friend);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-xs font-bold text-white transition shadow-2xs cursor-pointer flex items-center gap-1.5 flex-1 justify-center"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Message</span>
+                    </button>
                     <button
                       onClick={() => {
                         handleCreateGroupWithPeer({
@@ -482,10 +489,10 @@ export const FriendsView: React.FC = () => {
                           subjects: friend.subjects,
                         });
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] text-xs font-bold text-white transition shadow-2xs cursor-pointer flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-bold text-[#0A1931] transition cursor-pointer flex items-center gap-1.5 flex-1 justify-center"
                     >
-                      <Users2 className="w-3 h-3" />
-                      <span>Create Group</span>
+                      <Users2 className="w-3.5 h-3.5" />
+                      <span>Group</span>
                     </button>
                   </div>
                 </div>
