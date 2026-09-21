@@ -176,6 +176,13 @@ export const AddMaterialModal: React.FC = () => {
     const fileName = file.name;
     const cleanDocTitle = cleanTitle(fileName.replace(/\.[^/.]+$/, ""));
 
+    console.log(`[FILE SELECTED]`, {
+      filename: fileName,
+      fileId: uploadId,
+      contentBeginning: file.name,
+      timestamp: new Date().toISOString(),
+    });
+
     // Immediately isolate & override state with new file identity (never preserve old file data)
     setUploadedFileName(fileName);
     setTitle(cleanDocTitle);
@@ -207,6 +214,12 @@ export const AddMaterialModal: React.FC = () => {
       }
 
       try {
+        console.log(`[API REQUEST]`, {
+          filename: fileName,
+          fileId: uploadId,
+          timestamp: new Date().toISOString(),
+        });
+
         const res = await fetch("/api/extract-document", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -222,6 +235,13 @@ export const AddMaterialModal: React.FC = () => {
 
         const json = await res.json();
         if (currentUploadIdRef.current !== uploadId) return;
+
+        console.log(`[API RESPONSE]`, {
+          filename: fileName,
+          fileId: uploadId,
+          content: (json?.text || "").substring(0, 100),
+          timestamp: new Date().toISOString(),
+        });
 
         if (json?.success && json.text && json.text.trim().length > 15) {
           const cleanText = cleanToNaturalEnglish(json.text);
@@ -491,6 +511,18 @@ export const AddMaterialModal: React.FC = () => {
       console.warn("Using local study transformation fallback:", err);
     } finally {
       // Guaranteed save under all conditions (inside AI Studio, live links, and offline)
+      console.log(`[ACTIVE MATERIAL]`, {
+        fileId: newMaterialId,
+        title: finalTitle,
+        timestamp: new Date().toISOString(),
+      });
+
+      console.log(`[PREVIEW]`, {
+        fileId: newMaterialId,
+        contentPreview: rawContent.substring(0, 100),
+        timestamp: new Date().toISOString(),
+      });
+
       addMaterial(resolvedMaterial);
       saveGeneratedNotes(newMaterialId, resolvedNotes);
       saveGeneratedMemorise(newMaterialId, resolvedFlashcards);

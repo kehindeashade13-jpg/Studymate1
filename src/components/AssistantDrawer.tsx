@@ -112,6 +112,13 @@ Potential Questions: ${(mat.potentialExamQuestions || []).slice(0, 5).join(" | "
 Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
         : "No specific file uploaded.";
 
+      console.log(`[AI CONTEXT]`, {
+        fileId: mat?.id || "none",
+        title: mat?.title || "none",
+        contentExcerpt: (mat?.rawText || mat?.content || "").substring(0, 100),
+        timestamp: new Date().toISOString(),
+      });
+
       const res = await fetch("/api/gemini/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
