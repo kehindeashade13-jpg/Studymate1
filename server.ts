@@ -1077,10 +1077,11 @@ app.post("/api/gemini/generate-flashcards", async (req, res) => {
     try {
       const prompt = `You are StudyMate AI, an expert in cognitive science and spaced repetition memory techniques.
 Create a dedicated Memorise pack pulled directly from the uploaded study material below.
-Requirements:
+
+STRICT CONTENT REQUIREMENTS:
 1. "flashcards": Exactly 15 flashcards. Each MUST include:
-   - "id": unique string
-   - "front": clear prompt or question testing a fact, term, or relationship from the material
+   - "id": unique string (e.g. "fc-1", "fc-2")
+   - "front": clear, direct subject matter question or prompt testing a specific academic fact, mechanism, term, or relationship from the material
    - "back": concise, accurate direct answer
    - "explanation": a detailed explanation of the question asked, explaining the underlying mechanism and why this is the correct answer
    - "hint": a helpful clue
@@ -1094,6 +1095,11 @@ Requirements:
    - "hint": clue
    - "explanation": detailed explanation of why the answer fits
 4. "recallQuestions": 2-3 deep recall questions with ideal answers.
+
+CRITICAL NEGATIVE CONSTRAINTS:
+- NEVER ask meta questions about the file or upload format itself!
+- NEVER include phrases like "What is the uploaded study file?", "According to the uploaded document", "In this file", etc.
+- Questions must ONLY test genuine academic and scientific concepts directly from the subject text.
 
 Topic: ${title}
 Material:
@@ -1148,6 +1154,13 @@ Return ONLY a JSON object matching this schema:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
+      if (parsed && Array.isArray(parsed.flashcards)) {
+        // Sanitize out any meta questions from cards
+        parsed.flashcards = parsed.flashcards.filter((fc: any) => {
+          const lower = (fc.front || "").toLowerCase();
+          return !lower.includes("uploaded study file") && !lower.includes("uploaded file") && !lower.includes("what is the file");
+        });
+      }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
       console.warn("Gemini generate-flashcards failed, using fallback:", err?.message);
@@ -1475,27 +1488,30 @@ Return ONLY a JSON object matching this schema:
 
 // 4. Generate AI Diagnostic Quiz endpoint
 app.post("/api/gemini/generate-quiz", async (req, res) => {
-  const { title, content, questionCount = 6, variant = 1, excludeQuestions = [] } = req.body;
-  const count = Math.min(20, Math.max(4, parseInt(questionCount) || 6));
+  const { title, content, questionCount = 20, variant = 1 } = req.body;
+  const count = Math.min(20, Math.max(10, parseInt(questionCount) || 20));
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
       const prompt = `You are StudyMate AI Senior Diagnostic Assessment Specialist.
-You must construct a comprehensive, rigorous DIAGNOSTIC ASSESSMENT consisting of ${count} questions directly and specifically extracted from the provided study document.
+You must construct a comprehensive, rigorous DIAGNOSTIC ASSESSMENT consisting of exactly ${count} questions directly and specifically extracted from the provided study document.
 
 CRITICAL PEDAGOGICAL DIRECTIVES (STRICTLY ENFORCE):
-1. ABSOLUTELY DO NOT REPEAT FLASHCARD OR LESSON DEFINITIONS:
+1. ABSOLUTELY DO NOT REPEAT FLASHCARD OR GLOSSARY DEFINITIONS:
    - Do NOT ask simple vocabulary questions like "What is the definition of X?" or "Which term defines Y?". Flashcards and glossary sections already cover definitions.
 2. EXTRACT DEEP, VARIED QUESTIONS DIRECTLY FROM DIFFERENT SECTIONS OF THE UPLOADED TEXT:
-   - Diagnostic Scenario / Experimental Observation: A student or researcher is observing a reaction, calculation, or system described in the document. What diagnostic indicator confirms the mechanism?
+   - Diagnostic Scenario / Empirical Observation: An investigator alters conditions in a system described in the document. What diagnostic indicator confirms the mechanism?
    - Cause-and-Effect Mechanism: According to the document, what happens when condition A is altered relative to threshold B?
    - Mathematical / Quantitative / Formula Application: A calculation or parameter relationship extracted directly from the notes (e.g. rate laws, equilibrium constants, thermodynamics, ratios).
    - Boundary Conditions & Exceptions: What condition causes the standard rule in this lecture to fail or deviate?
    - Misconceptions & Traps: Diagnostic question targeting the exact misconception students make on this topic.
-3. FRESH VARIATION (Variant #${variant}): Focus on diverse sub-topics across the document so this test is completely unique and different from other test runs.
-4. FOUR CONCISE, PLAUSIBLE OPTIONS: Each multiple-choice question must have 4 clear, unambiguous choices where exactly one is scientifically/academically correct according to the uploaded notes.
-5. THOROUGH DIAGNOSTIC EXPLANATION: In "explanation", explicitly explain why the correct answer is right and why the diagnostic discriminator is critical.
+   - Perturbations, Catalytic Limits, Homeostatic Loops, Bottlenecks, Depletion Effects, and High-Yield Syntheses.
+3. ZERO META-QUESTIONS:
+   - NEVER ask questions about the file name, upload format, or file metadata (e.g. NEVER ask "What is the uploaded study file?"). ONLY ask about the academic subject matter!
+4. FRESH VARIATION (Variant #${variant}): Focus on diverse sub-topics across the document so this test is completely unique and different from other test runs.
+5. FOUR CONCISE, PLAUSIBLE OPTIONS: Each multiple-choice question must have 4 clear, unambiguous choices where exactly one is scientifically/academically correct according to the uploaded notes.
+6. THOROUGH DIAGNOSTIC EXPLANATION: In "explanation", explicitly explain why the correct answer is right and why the diagnostic discriminator is critical.
 
 Topic Title: ${title || "Core Subject"}
 Source Content from Uploaded File:
@@ -1530,7 +1546,7 @@ Return ONLY valid JSON matching this schema:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
-      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length >= 3) {
+      if (parsed && Array.isArray(parsed.questions) && parsed.questions.length >= 5) {
         return res.json({ success: true, data: parsed });
       }
     } catch (err: any) {
@@ -1538,107 +1554,319 @@ Return ONLY valid JSON matching this schema:
     }
   }
 
-  // Fallback diagnostic quiz tailored to title and variant
+  // Fallback diagnostic quiz: full 20 questions tailored to subject and variant
   const subjectName = title || "Academic Study";
   const varOffset = ((variant || 1) - 1) * 3;
+
+  const fallbackQuestions = [
+    {
+      id: `diag-q-${1 + varOffset}`,
+      type: "scenario",
+      question: `[Diagnostic Scenario] A student investigates the processes governing ${subjectName}. If the primary regulatory threshold is perturbed by 30%, which immediate diagnostic outcome indicates the system is compensating via negative feedback?`,
+      options: [
+        "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
+        "The system enters runaway exponential consumption of internal reactants",
+        "All molecular interactions and energetic exchanges halt instantaneously",
+        "The equilibrium constant permanently shifts by an arbitrary factor of ten",
+      ],
+      correctAnswer: "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
+      explanation: `In ${subjectName}, negative feedback acts as an autonomous stabilizing mechanism that dampens external perturbations to preserve homeostasis.`,
+      topicTag: "System Dynamics & Feedback",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${2 + varOffset}`,
+      type: "mechanism",
+      question: `[Mechanism Analysis] Under what specific boundary condition does the standard rate-determining step in ${subjectName} shift to diffusion-limited kinetics?`,
+      options: [
+        "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
+        "When the temperature approaches absolute zero",
+        "When reactants are separated into completely immiscible non-polar phases",
+        "When total pressure is decreased to a perfect vacuum",
+      ],
+      correctAnswer: "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
+      explanation: "Diffusion control takes over when encounters between species happen slower than the reaction itself once collided.",
+      topicTag: "Rate Limits & Boundary Conditions",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${3 + varOffset}`,
+      type: "boundary_case",
+      question: `[Diagnostic Trap] When interpreting experimental data from ${subjectName}, which common assumption leads to an incorrect diagnostic conclusion?`,
+      options: [
+        "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
+        "Accounting for temperature-dependent variations in the rate coefficient",
+        "Verifying mass balance across all closed boundaries",
+        "Distinguishing between macroscopic equilibrium and microscopic reversibility",
+      ],
+      correctAnswer: "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
+      explanation: "Zero-order behavior only holds while the catalyst or active site is completely saturated; once substrate drops below saturation, kinetics revert to first-order.",
+      topicTag: "Experimental Error & Misconceptions",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${4 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Quantitative Relationship] In ${subjectName}, how does an increase in temperature affect the ratio of forward to reverse rate constants in an endothermic process?`,
+      options: [
+        "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
+        "Both rate constants decrease uniformly due to thermal disruption",
+        "The reverse rate accelerates while the forward rate remains completely frozen",
+        "The equilibrium position remains unchanged because temperature has no effect on energetic distribution",
+      ],
+      correctAnswer: "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
+      explanation: "By the van 't Hoff relationship, an endothermic process absorbs heat, so increasing temperature favors the forward pathway and elevates K.",
+      topicTag: "Thermodynamics & Kinetics Coupling",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${5 + varOffset}`,
+      type: "scenario",
+      question: `[Diagnostic Troubleshooting] An analytical reading in ${subjectName} displays sudden variance during continuous monitoring. What diagnostic step should be executed first?`,
+      options: [
+        "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
+        "Immediately discard all raw measurements and restart without root-cause analysis",
+        "Assume mathematical models are inapplicable to physical reality",
+        "Alter multiple experimental variables simultaneously to force a match",
+      ],
+      correctAnswer: "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
+      explanation: "Rigorous scientific diagnosis begins by isolating measurement baselines and confirming interface integrity before changing systemic variables.",
+      topicTag: "Analytical Diagnosis",
+      difficulty: "easy",
+    },
+    {
+      id: `diag-q-${6 + varOffset}`,
+      type: "mechanism",
+      question: `[Causality Diagnostic] Which of the following best explains why catalysts in ${subjectName} accelerate reaction speed without altering the thermodynamic yield?`,
+      options: [
+        "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
+        "They supply external chemical enthalpy directly into the products",
+        "They completely eliminate entropy changes across the entire system",
+        "They selectively suppress all reverse reaction pathways",
+      ],
+      correctAnswer: "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
+      explanation: "Catalysts accelerate both forward and reverse reactions by the exact same proportion by lowering activation energy (Ea), leaving ΔG° and K unchanged.",
+      topicTag: "Catalysis & Energetics",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${7 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Equilibrium Perturbation] If additional product is introduced into a closed steady-state system in ${subjectName}, how does the reaction quotient (Q) compare to the equilibrium constant (K)?`,
+      options: [
+        "Q > K, driving a net shift toward reactants until Q equals K again",
+        "Q < K, driving even more product formation",
+        "Q remains strictly equal to K regardless of any additions",
+        "K increases permanently to match the new concentration",
+      ],
+      correctAnswer: "Q > K, driving a net shift toward reactants until Q equals K again",
+      explanation: "When products are added, the concentration fraction Q exceeds K, compelling the system to proceed in reverse to restore equilibrium.",
+      topicTag: "Reaction Quotient & Equilibrium",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${8 + varOffset}`,
+      type: "scenario",
+      question: `[Rate Bottleneck] In a three-step sequential pathway in ${subjectName}, Step 1 takes 2ms, Step 2 takes 150ms, and Step 3 takes 5ms. What is the overall rate law governed by?`,
+      options: [
+        "Step 2, because the overall reaction velocity is strictly determined by the slowest elementary step",
+        "Step 1, because it initiates the cascade",
+        "Step 3, because it yields the final product",
+        "The simple arithmetic average of all three step velocities",
+      ],
+      correctAnswer: "Step 2, because the overall reaction velocity is strictly determined by the slowest elementary step",
+      explanation: "The rate-determining step acts as the kinetic bottleneck of the entire reaction mechanism.",
+      topicTag: "Rate-Determining Bottlenecks",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${9 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Conservation & Stoichiometry] In ${subjectName}, when converting reactants to products in a closed container, which quantity is strictly conserved under all conditions?`,
+      options: [
+        "Total mass, elemental atoms, and net electrical charge",
+        "Total number of gas moles",
+        "Total volume of liquid phase",
+        "Color and opacity of the medium",
+      ],
+      correctAnswer: "Total mass, elemental atoms, and net electrical charge",
+      explanation: "Conservation laws mandate that atomic nuclei, mass, and total electrical charge remain invariant across chemical transformations.",
+      topicTag: "Conservation Principles",
+      difficulty: "easy",
+    },
+    {
+      id: `diag-q-${10 + varOffset}`,
+      type: "scenario",
+      question: `[Phase & Compartment Limits] How does phase separation or membrane compartmentalization influence reaction kinetics in ${subjectName}?`,
+      options: [
+        "It concentrates specific reactants locally, drastically accelerating effective collision rates while sequestering inhibitors",
+        "It stops all chemical reactions from proceeding forever",
+        "It causes spontaneous entropy destruction",
+        "It makes reaction rates identical in all compartments",
+      ],
+      correctAnswer: "It concentrates specific reactants locally, drastically accelerating effective collision rates while sequestering inhibitors",
+      explanation: "Compartmentalization increases local effective concentrations and protects specialized pathways from cross-interference.",
+      topicTag: "Compartmentalization & Transport",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${11 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Enthalpy & Entropy] For a process in ${subjectName} where ΔH > 0 (endothermic) and ΔS > 0 (increased entropy), under what temperature conditions is the process spontaneous?`,
+      options: [
+        "Only at high temperatures where the TΔS term surpasses the positive ΔH",
+        "Only at absolute zero",
+        "At all temperatures without exception",
+        "Under no temperature conditions",
+      ],
+      correctAnswer: "Only at high temperatures where the TΔS term surpasses the positive ΔH",
+      explanation: "Since ΔG = ΔH - TΔS, when both terms are positive, high T makes -TΔS sufficiently negative to yield a net negative ΔG.",
+      topicTag: "Thermodynamics & Spontaneity",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${12 + varOffset}`,
+      type: "scenario",
+      question: `[Allosteric Modulation] When an effector binds to a non-active site in a ${subjectName} regulatory complex and reduces activity, this represents:`,
+      options: [
+        "Non-competitive / allosteric inhibition, which lowers Vmax without changing substrate affinity (Km)",
+        "Competitive inhibition, which can be overcome simply by adding infinite substrate",
+        "Permanent covalent denaturation",
+        "Positive cooperative feedback",
+      ],
+      correctAnswer: "Non-competitive / allosteric inhibition, which lowers Vmax without changing substrate affinity (Km)",
+      explanation: "Allosteric binding changes enzyme conformation, reducing catalytic turnover (Vmax) regardless of substrate concentration.",
+      topicTag: "Allosteric & Feedback Control",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${13 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Activation Energy Analysis] If the temperature of a reaction in ${subjectName} is raised from 300K to 310K, why does the reaction rate typically double?`,
+      options: [
+        "The fraction of molecules possessing kinetic energy exceeding the activation energy (Ea) increases exponentially according to Maxwell-Boltzmann distribution",
+        "Molecules expand to twice their original physical volume",
+        "The molecular weight of the solvent is cut in half",
+        "Atmospheric pressure doubles automatically",
+      ],
+      correctAnswer: "The fraction of molecules possessing kinetic energy exceeding the activation energy (Ea) increases exponentially according to Maxwell-Boltzmann distribution",
+      explanation: "Rate acceleration with temperature is predominantly caused by the exponential increase in high-energy collisions exceeding Ea.",
+      topicTag: "Arrhenius Kinetics",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${14 + varOffset}`,
+      type: "scenario",
+      question: `[Depletion & Starvation Dynamics] If the primary precursor in a ${subjectName} metabolic or synthesis cascade is depleted by 95%, what is the expected downstream signature?`,
+      options: [
+        "Downstream intermediate production drops proportionally, triggering derepression of upstream scavenging pathways",
+        "Downstream products continue accumulating at maximal velocity",
+        "The system switches from chemistry to nuclear fusion",
+        "Sensor mechanisms permanently deactivate without response",
+      ],
+      correctAnswer: "Downstream intermediate production drops proportionally, triggering derepression of upstream scavenging pathways",
+      explanation: "Precursor starvation throttles downstream flux and removes feedback inhibition, initiating compensatory scavenging.",
+      topicTag: "Precursor Kinetics & Regulation",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${15 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Diagnostic Discrimination] What distinguishing feature differentiates a steady-state open system from a static closed equilibrium in ${subjectName}?`,
+      options: [
+        "Steady state requires continuous influx and efflux of matter/energy to maintain unchanging internal parameters; static equilibrium requires zero flux",
+        "Static equilibrium has higher entropy generation than steady state",
+        "Steady state only occurs inside dead cells",
+        "There is no thermodynamic difference between them",
+      ],
+      correctAnswer: "Steady state requires continuous influx and efflux of matter/energy to maintain unchanging internal parameters; static equilibrium requires zero flux",
+      explanation: "Living and dynamic systems maintain steady states far from thermodynamic equilibrium by continuous energy dissipation.",
+      topicTag: "Steady State vs Equilibrium",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${16 + varOffset}`,
+      type: "scenario",
+      question: `[Diagnostic Reversibility Test] An experimenter wants to confirm whether a pathway step in ${subjectName} is freely reversible. Which experimental test provides conclusive evidence?`,
+      options: [
+        "Adding isotopic radio-labeled product and observing whether the label incorporates back into the reactant pool",
+        "Measuring the color change with the naked eye",
+        "Heating the container until it boils dry",
+        "Shaking the sample vigorously for 5 seconds",
+      ],
+      correctAnswer: "Adding isotopic radio-labeled product and observing whether the label incorporates back into the reactant pool",
+      explanation: "Isotope exchange demonstrates bidirectional microscopic flux under reversible conditions.",
+      topicTag: "Diagnostic Experimental Verification",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${17 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Energy Coupling] In ${subjectName}, how do endergonic processes overcome positive free energy changes (ΔG > 0) to proceed in vivo or in vitro?`,
+      options: [
+        "By stoichiometric coupling to a strongly exergonic reaction with a large negative ΔG (such as nucleotide triphosphate hydrolysis)",
+        "By reducing the system temperature to absolute zero",
+        "By violating the second law of thermodynamics temporarily",
+        "By eliminating all product molecules from the universe",
+      ],
+      correctAnswer: "By stoichiometric coupling to a strongly exergonic reaction with a large negative ΔG (such as nucleotide triphosphate hydrolysis)",
+      explanation: "Additive free energies allow unfavorable reactions to proceed when paired with sufficiently exergonic driving steps.",
+      topicTag: "Thermodynamic Energy Coupling",
+      difficulty: "medium",
+    },
+    {
+      id: `diag-q-${18 + varOffset}`,
+      type: "scenario",
+      question: `[Sensitivity Analysis] In a mathematical model of ${subjectName}, parameter Sensitivity S = (dY/Y) / (dX/X). If S = 2.0 for parameter X, what does this indicate?`,
+      options: [
+        "A 10% change in input X causes a 20% amplification in output Y, identifying X as a high-impact control parameter",
+        "Output Y is completely insensitive to changes in X",
+        "The model contains a fatal syntax error",
+        "Parameter X is irrelevant to system operation",
+      ],
+      correctAnswer: "A 10% change in input X causes a 20% amplification in output Y, identifying X as a high-impact control parameter",
+      explanation: "Normalized sensitivity coefficients greater than 1 represent high-leverage amplification targets in system architecture.",
+      topicTag: "Mathematical Modeling & Sensitivity",
+      difficulty: "hard",
+    },
+    {
+      id: `diag-q-${19 + varOffset}`,
+      type: "multiple_choice",
+      question: `[Error Analysis & Control] When running diagnostic assays in ${subjectName}, why is a negative control essential?`,
+      options: [
+        "To establish baseline background signal and confirm that the observed response is not due to non-specific binding or contamination",
+        "To guarantee that every test yields a 100% positive result",
+        "To double the monetary cost of the experiment",
+        "To test what happens when all electricity is turned off",
+      ],
+      correctAnswer: "To establish baseline background signal and confirm that the observed response is not due to non-specific binding or contamination",
+      explanation: "Negative controls validate diagnostic specificity by measuring non-specific background noise.",
+      topicTag: "Experimental Controls & Methodology",
+      difficulty: "easy",
+    },
+    {
+      id: `diag-q-${20 + varOffset}`,
+      type: "scenario",
+      question: `[Comprehensive Diagnostic Synthesis] When integrating kinetics, thermodynamics, and regulatory feedback in ${subjectName}, what represents the ultimate criterion for system viability?`,
+      options: [
+        "Maintaining negative overall free energy dissipation while sustaining steady-state homeostatic robustness against external fluctuations",
+        "Reaching maximum static equilibrium where all biological and chemical activity stops",
+        "Operating at infinite temperature and infinite pressure",
+        "Consuming zero mass and generating infinite kinetic work",
+      ],
+      correctAnswer: "Maintaining negative overall free energy dissipation while sustaining steady-state homeostatic robustness against external fluctuations",
+      explanation: "Robust dynamic stability sustained by continuous energetic throughput defines operational success across chemical, biological, and physical systems.",
+      topicTag: "Comprehensive System Synthesis",
+      difficulty: "hard",
+    },
+  ];
 
   return res.json({
     success: true,
     data: {
-      quizTitle: `${subjectName} Diagnostic Assessment (Set ${variant || 1})`,
+      quizTitle: `${subjectName} Diagnostic Assessment (20 High-Yield Questions)`,
       topic: subjectName,
-      questions: [
-        {
-          id: `diag-q-${1 + varOffset}`,
-          type: "scenario",
-          question: `[Diagnostic Scenario] A student investigates the processes governing ${subjectName}. If the primary regulatory threshold is perturbed by 30%, which immediate diagnostic outcome indicates the system is compensating via negative feedback?`,
-          options: [
-            "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
-            "The system enters runaway exponential consumption of internal reactants",
-            "All molecular interactions and energetic exchanges halt instantaneously",
-            "The equilibrium constant permanently shifts by an arbitrary factor of ten",
-          ],
-          correctAnswer: "Operational throughput throttles back toward steady-state equilibrium rather than escalating uncontrollably",
-          explanation: `In ${subjectName}, negative feedback acts as an autonomous stabilizing mechanism that dampens external perturbations to preserve homeostasis.`,
-          topicTag: "System Dynamics & Feedback",
-          difficulty: "medium",
-        },
-        {
-          id: `diag-q-${2 + varOffset}`,
-          type: "mechanism",
-          question: `[Mechanism Analysis] Under what specific boundary condition does the standard rate-determining step in ${subjectName} shift to diffusion-limited kinetics?`,
-          options: [
-            "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
-            "When the temperature approaches absolute zero",
-            "When reactants are separated into completely immiscible non-polar phases",
-            "When total pressure is decreased to a perfect vacuum",
-          ],
-          correctAnswer: "When the inherent chemical activation barrier becomes negligible compared to the rate of molecular transport through the medium",
-          explanation: "Diffusion control takes over when encounters between species happen slower than the reaction itself once collided.",
-          topicTag: "Rate Limits & Boundary Conditions",
-          difficulty: "hard",
-        },
-        {
-          id: `diag-q-${3 + varOffset}`,
-          type: "boundary_case",
-          question: `[Diagnostic Trap] When interpreting experimental data from ${subjectName}, which common assumption leads to an incorrect diagnostic conclusion?`,
-          options: [
-            "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
-            "Accounting for temperature-dependent variations in the rate coefficient",
-            "Verifying mass balance across all closed boundaries",
-            "Distinguishing between macroscopic equilibrium and microscopic reversibility",
-          ],
-          correctAnswer: "Assuming that a zero-order process continues indefinitely without substrate exhaustion",
-          explanation: "Zero-order behavior only holds while the catalyst or active site is completely saturated; once substrate drops below saturation, kinetics revert to first-order.",
-          topicTag: "Experimental Error & Misconceptions",
-          difficulty: "medium",
-        },
-        {
-          id: `diag-q-${4 + varOffset}`,
-          type: "multiple_choice",
-          question: `[Quantitative Relationship] In ${subjectName}, how does an increase in temperature affect the ratio of forward to reverse rate constants in an endothermic process?`,
-          options: [
-            "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
-            "Both rate constants decrease uniformly due to thermal disruption",
-            "The reverse rate accelerates while the forward rate remains completely frozen",
-            "The equilibrium position remains unchanged because temperature has no effect on energetic distribution",
-          ],
-          correctAnswer: "The forward rate increases more steeply than the reverse rate, increasing the equilibrium constant (K)",
-          explanation: "By the van 't Hoff relationship, an endothermic process absorbs heat, so increasing temperature favors the forward pathway and elevates K.",
-          topicTag: "Thermodynamics & Kinetics Coupling",
-          difficulty: "hard",
-        },
-        {
-          id: `diag-q-${5 + varOffset}`,
-          type: "scenario",
-          question: `[Diagnostic Troubleshooting] An analytical reading in ${subjectName} displays sudden variance during continuous monitoring. What diagnostic step should be executed first?`,
-          options: [
-            "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
-            "Immediately discard all raw measurements and restart without root-cause analysis",
-            "Assume mathematical models are inapplicable to physical reality",
-            "Alter multiple experimental variables simultaneously to force a match",
-          ],
-          correctAnswer: "Verify calibration baseline and inspect the rate-limiting interface for saturation or contamination",
-          explanation: "Rigorous scientific diagnosis begins by isolating measurement baselines and confirming interface integrity before changing systemic variables.",
-          topicTag: "Analytical Diagnosis",
-          difficulty: "easy",
-        },
-        {
-          id: `diag-q-${6 + varOffset}`,
-          type: "mechanism",
-          question: `[Causality Diagnostic] Which of the following best explains why catalysts in ${subjectName} accelerate reaction speed without altering the thermodynamic yield?`,
-          options: [
-            "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
-            "They supply external chemical enthalpy directly into the products",
-            "They completely eliminate entropy changes across the entire system",
-            "They selectively suppress all reverse reaction pathways",
-          ],
-          correctAnswer: "They provide an alternative transition pathway with lower activation energy for both forward and reverse directions equally",
-          explanation: "Catalysts accelerate both forward and reverse reactions by the exact same proportion by lowering activation energy (Ea), leaving ΔG° and K unchanged.",
-          topicTag: "Catalysis & Energetics",
-          difficulty: "medium",
-        },
-      ],
+      questions: fallbackQuestions,
     },
   });
 });

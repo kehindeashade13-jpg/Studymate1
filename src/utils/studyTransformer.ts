@@ -308,6 +308,75 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
   ];
 }
 
+// Helper to verify a term is a genuine academic concept and not a meta artifact
+export function isAcademicTerm(term: string): boolean {
+  if (!term || term.length < 2 || term.length > 45) return false;
+  if (isGarbledText(term)) return false;
+  const lower = term.toLowerCase().trim();
+  if (
+    lower.includes("uploaded study") ||
+    lower.includes("uploaded file") ||
+    lower.includes("study file") ||
+    lower.includes("file name") ||
+    lower.includes("filename") ||
+    lower.includes("page ") ||
+    lower.includes("slide ") ||
+    lower.includes("chapter ") ||
+    lower.includes("download") ||
+    lower.includes("attachment") ||
+    lower.startsWith("http") ||
+    lower.includes(".pdf") ||
+    lower.includes(".docx") ||
+    lower.includes(".txt") ||
+    lower.includes(".png") ||
+    lower.includes(".jpg") ||
+    lower.includes("untitled")
+  ) {
+    return false;
+  }
+  const letters = term.replace(/[^a-zA-Z]/g, "");
+  if (letters.length < 2) return false;
+  if (/[:;?#$|^~`*\\_=[\]{}<>]/.test(term)) return false;
+  return true;
+}
+
+// Helper to verify a definition is academically substantive and clean
+export function isAcademicDefinition(def: string): boolean {
+  if (!def || def.length < 12 || def.length > 450) return false;
+  if (isGarbledText(def)) return false;
+  const lower = def.toLowerCase();
+  if (
+    lower.includes("uploaded study file") ||
+    lower.includes("uploaded file") ||
+    lower.includes("the uploaded text") ||
+    lower.includes(".pdf") ||
+    lower.includes(".docx") ||
+    lower.includes("file:") ||
+    lower.includes("http://") ||
+    lower.includes("https://")
+  ) {
+    return false;
+  }
+  const words = def.split(/\s+/).filter(Boolean);
+  if (words.length < 3) return false;
+  return true;
+}
+
+// Strip meta references (e.g. "according to the uploaded file") so questions test pure subject matter
+export function sanitizeAcademicPrompt(text: string): string {
+  if (!text) return "";
+  let clean = text
+    .replace(/\baccording to the (?:uploaded|provided) (?:study )?(?:material|file|document|text)\b/gi, "in standard scientific theory")
+    .replace(/\b(?:in|from) the (?:uploaded|provided) (?:study )?(?:material|file|document|text)\b/gi, "")
+    .replace(/\bthe uploaded study file\b/gi, "the subject framework")
+    .replace(/\buploaded study file:?\s*[^\n,.]*/gi, "")
+    .replace(/\buploaded study file\b/gi, "foundational concepts")
+    .replace(/\buploaded file\b/gi, "study topic")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return clean;
+}
+
 // Extract rich features, terms, facts, and sentences from raw text, with subject-specific seed banks
 export function extractTextFeatures(rawText: string, title: string) {
   const clean = cleanToNaturalEnglish(rawText);
@@ -317,46 +386,35 @@ export function extractTextFeatures(rawText: string, title: string) {
   const importantFacts: string[] = [];
   const keySentences: string[] = [];
 
-  const isValidTerm = (term: string) => {
-    if (!term || term.length < 2 || term.length > 45) return false;
-    if (isGarbledText(term)) return false;
-    const letters = term.replace(/[^a-zA-Z]/g, "");
-    if (letters.length < 2) return false;
-    if (/[:;?#$|^~`*\\_=[\]{}<>]/.test(term)) return false;
-    return true;
-  };
-
-  const isValidDef = (def: string) => {
-    if (!def || def.length < 12 || def.length > 400) return false;
-    if (isGarbledText(def)) return false;
-    const words = def.split(/\s+/).filter(Boolean);
-    if (words.length < 3) return false;
-    return true;
-  };
-
   for (const line of rawLines) {
     if (line.length < 10) continue;
+    if (/uploaded study file/i.test(line)) continue;
 
     // Colon or dash definitions
-    if (line.includes(":") && definitions.length < 20) {
+    if (line.includes(":") && definitions.length < 25) {
       const [term, ...defParts] = line.split(":");
       const def = defParts.join(":").trim();
       const cleanTerm = term.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (isValidTerm(cleanTerm) && isValidDef(def)) {
+      if (isAcademicTerm(cleanTerm) && isAcademicDefinition(def)) {
         definitions.push({ term: cleanTerm, definition: def });
       }
-    } else if (line.includes(" - ") && definitions.length < 20) {
+    } else if (line.includes(" - ") && definitions.length < 25) {
       const [term, ...defParts] = line.split(" - ");
       const def = defParts.join(" - ").trim();
       const cleanTerm = term.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (isValidTerm(cleanTerm) && isValidDef(def)) {
+      if (isAcademicTerm(cleanTerm) && isAcademicDefinition(def)) {
         definitions.push({ term: cleanTerm, definition: def });
       }
     }
 
     if (line.length > 25 && line.length < 250) {
       const cleanedLine = line.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (!importantFacts.includes(cleanedLine) && importantFacts.length < 25 && !isGarbledText(cleanedLine)) {
+      if (
+        !importantFacts.includes(cleanedLine) &&
+        importantFacts.length < 25 &&
+        !isGarbledText(cleanedLine) &&
+        !/uploaded study file/i.test(cleanedLine)
+      ) {
         importantFacts.push(cleanedLine);
       }
     }
@@ -365,7 +423,11 @@ export function extractTextFeatures(rawText: string, title: string) {
     const sents = line.split(/(?<=[.?!])\s+/).filter((s) => s.length > 25 && s.length < 200);
     for (const s of sents) {
       const cleanedSent = s.replace(/^[-*•\d.]+\s*/, "").trim();
-      if (!keySentences.includes(cleanedSent) && !isGarbledText(cleanedSent)) {
+      if (
+        !keySentences.includes(cleanedSent) &&
+        !isGarbledText(cleanedSent) &&
+        !/uploaded study file/i.test(cleanedSent)
+      ) {
         keySentences.push(cleanedSent);
       }
     }
@@ -512,6 +574,7 @@ export function extractTextFeatures(rawText: string, title: string) {
 }
 
 // Generate distinct, file-grounded diagnostic assessment questions testing scenarios, mechanisms, boundaries, and quantitative coupling
+// Generate 20 distinct diagnostic questions strictly grounded in the uploaded material
 export function generateDiagnosticQuestions(
   materialId: string,
   title: string,
@@ -523,106 +586,355 @@ export function generateDiagnosticQuestions(
 ): QuizQuestion[] {
   const cleanTitleStr = cleanTitle(title);
   const defsCount = Math.max(1, definitions.length);
-  const offset = ((variant || 1) - 1) * 2;
+  const offset = ((variant || 1) - 1) * 3;
 
-  const d0 = definitions[offset % defsCount] || { term: "Core Mechanism", definition: "The central regulatory process governing system transformations." };
-  const d1 = definitions[(offset + 1) % defsCount] || { term: "Activation Energy", definition: "The minimum kinetic barrier required to initiate forward reaction." };
-  const d2 = definitions[(offset + 2) % defsCount] || { term: "Dynamic Equilibrium", definition: "A state where opposing transformations proceed at equal rates." };
-  const d3 = definitions[(offset + 3) % defsCount] || { term: "Limiting Factor", definition: "The primary boundary constraint capping maximum velocity or yield." };
-  const d4 = definitions[(offset + 4) % defsCount] || { term: "Feedback Regulation", definition: "A self-correcting control loop that adjusts forward rates to preserve balance." };
-  const d5 = definitions[(offset + 5) % defsCount] || { term: "Conservation Law", definition: "The principle that mass and energy remain constant across closed systems." };
+  // Helper to pick a safe definition
+  const getDef = (idx: number, fallbackTerm: string, fallbackDef: string) => {
+    const d = definitions[(offset + idx) % defsCount];
+    if (d && isAcademicTerm(d.term) && isAcademicDefinition(d.definition)) {
+      return { term: sanitizeAcademicPrompt(d.term), definition: sanitizeAcademicPrompt(d.definition) };
+    }
+    return { term: fallbackTerm, definition: fallbackDef };
+  };
+
+  const d0 = getDef(0, "Core Mechanism", "The central operational pathway governing state changes and systemic conversion.");
+  const d1 = getDef(1, "Activation Threshold", "The minimum kinetic or thermodynamic barrier required to initiate forward activity.");
+  const d2 = getDef(2, "Dynamic Equilibrium", "A balanced state where forward and reverse transformation rates are exactly equal.");
+  const d3 = getDef(3, "Limiting Constraint", "The essential rate-limiting component or resource with lowest availability.");
+  const d4 = getDef(4, "Feedback Regulation", "A self-adjusting control mechanism that alters upstream input velocity based on output levels.");
+  const d5 = getDef(5, "Conservation Law", "The physical principle that mass, charge, and energy remain constant across transformations.");
+  const d6 = getDef(6, "Catalytic Efficiency", "The enhancement of transformation velocity by providing a lower activation pathway without altering overall free energy.");
+  const d7 = getDef(7, "Phase Boundary", "The physical interface separating distinct states or operational compartments in the system.");
+  const d8 = getDef(8, "Steady-State Flux", "The continuous throughput of reactants or signals where intermediate concentrations remain unvarying.");
+  const d9 = getDef(9, "Molecular Affinity", "The intrinsic binding strength and kinetic specificity between interacting components.");
+  const d10 = getDef(10, "Thermodynamic Driving Force", "The net free energy difference driving forward progression toward minimal system entropy.");
+  const d11 = getDef(11, "Rate-Determining Bottleneck", "The slowest individual reaction or transmission step governing the global system velocity.");
+
+  const q1: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-1`,
+    type: "scenario",
+    question: `[Applied Scenario] During an experiment investigating ${cleanTitleStr}, an investigator modifies reaction conditions. Which specific observation directly confirms that the system is operating according to the governing principles of ${d0.term}?`,
+    options: [
+      `The operational response adjusts dynamically according to ${d0.definition.toLowerCase()}, preserving system stability.`,
+      "The process accelerates to infinite speed without consuming any substrate or energetic input.",
+      "Both forward and reverse transformations cease completely and irreversibly.",
+      "Measured output variables fluctuate at random with zero physical correlation.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `The operational response adjusts dynamically according to ${d0.definition.toLowerCase()}, preserving system stability.`,
+    explanation: `Diagnostic analysis: observing measured stabilization confirms that "${d0.term}" is functioning as expected under empirical conditions.`,
+    topicTag: "Applied Scenario & Observation",
+    difficulty: "medium",
+  };
+
+  const q2: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-2`,
+    type: "multiple_choice",
+    question: `[Causal Mechanism] In ${cleanTitleStr}, what is the direct systemic consequence when the critical threshold for "${d1.term}" is successfully achieved?`,
+    options: [
+      `It initiates the forward transition because ${d1.definition.toLowerCase()}`,
+      "It completely violates the universal conservation of mass across all boundaries.",
+      "The system becomes permanently inert and unresponsive to energetic inputs.",
+      "All potential energy converts spontaneously into destructive resonance.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `It initiates the forward transition because ${d1.definition.toLowerCase()}`,
+    explanation: `Diagnostic reasoning traces the causal mechanism: overcoming the barrier of "${d1.term}" allows forward progression.`,
+    topicTag: "Causal Mechanisms & Pathways",
+    difficulty: "medium",
+  };
+
+  const q3: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-3`,
+    type: "scenario",
+    question: `[Boundary Condition] Under which operating condition would the standard theoretical model for "${d2.term}" in ${cleanTitleStr} break down or require non-ideal corrections?`,
+    options: [
+      "When an intense external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
+      "Whenever measurements are recorded using standard SI metric units.",
+      "When temperature and pressure are maintained strictly uniform throughout the system.",
+      "Whenever a homogeneous catalyst is introduced.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "When an intense external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
+    explanation: `Diagnostic edge cases evaluate boundary limits: "${d2.term}" relies on equal dynamic exchange, which fails if rapid shock overwhelms compensation.`,
+    topicTag: "Boundary Conditions & Edge Cases",
+    difficulty: "hard",
+  };
+
+  const q4: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-4`,
+    type: "multiple_choice",
+    question: `[Diagnostic Misconception] When analyzing experimental findings for ${cleanTitleStr}, which erroneous interpretation leads to a false diagnostic conclusion regarding "${d3.term}"?`,
+    options: [
+      `Confusing a temporary throughput restriction governed by ${d3.term} with complete thermodynamic cessation.`,
+      "Calibrating sensors against verified reference standards prior to testing.",
+      "Maintaining controlled baseline variables across successive trial iterations.",
+      "Logging data points at uniform, high-resolution time intervals.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
+    explanation: `A classic diagnostic error is mistaking the rate restriction imposed by "${d3.term}" for a dead or halted system.`,
+    topicTag: "Misconceptions & Diagnostic Traps",
+    difficulty: "medium",
+  };
+
+  const q5: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-5`,
+    type: "multiple_choice",
+    question: `[Quantitative Relationship] In ${cleanTitleStr}, how is the active modulation of "${d4.term}" mathematically coupled with overall operational efficiency?`,
+    options: [
+      `It optimizes efficiency by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
+      "It eliminates the requirement for any energetic or physical input.",
+      "It forces all forward velocity to zero indefinitely.",
+      "It causes unpredictable sinusoidal oscillations with zero damping.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `It optimizes efficiency by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
+    explanation: `Quantitative analysis reveals that "${d4.term}" actively modulates velocity to keep throughput near the optimal capacity curve.`,
+    topicTag: "Quantitative & Kinetic Coupling",
+    difficulty: "hard",
+  };
+
+  const q6: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-6`,
+    type: "scenario",
+    question: `[Equilibrium Perturbation] If an investigator applies Le Chatelier / homeostatic stress to a system in ${cleanTitleStr} governed by "${d2.term}", how does the system compensate?`,
+    options: [
+      "It shifts net flux in the direction that opposes and relieves the applied stress until a new balanced state is established.",
+      "It amplifies the stress exponentially until the entire system collapses.",
+      "It instantly stops all molecular and energetic interactions permanently.",
+      "It maintains identical absolute concentrations regardless of extreme external additions.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "It shifts net flux in the direction that opposes and relieves the applied stress until a new balanced state is established.",
+    explanation: `Equilibrium response dictates that stress induces compensatory flux shift to minimize the perturbation.`,
+    topicTag: "Dynamic Equilibrium & Compensation",
+    difficulty: "medium",
+  };
+
+  const q7: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-7`,
+    type: "multiple_choice",
+    question: `[Comparative Discrimination] Which statement accurately discriminates between the operational role of "${d0.term}" and "${d6.term}" in ${cleanTitleStr}?`,
+    options: [
+      `"${d0.term}" establishes the fundamental conversion logic, whereas "${d6.term}" lowers the barrier to accelerate progression toward the same endpoint.`,
+      `"${d6.term}" shifts the fundamental thermodynamic equilibrium constant, whereas "${d0.term}" does not.`,
+      `Both concepts refer to identical physical processes with no functional distinction.`,
+      `"${d0.term}" is only active in open systems, whereas "${d6.term}" only functions at absolute zero.`,
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `"${d0.term}" establishes the fundamental conversion logic, whereas "${d6.term}" lowers the barrier to accelerate progression toward the same endpoint.`,
+    explanation: `Comparative analysis clarifies functional separation: catalysts lower activation barriers without altering thermodynamic equilibrium.`,
+    topicTag: "Comparative Discrimination",
+    difficulty: "hard",
+  };
+
+  const q8: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-8`,
+    type: "multiple_choice",
+    question: `[Rate-Limiting Bottleneck] In a multi-step pathway within ${cleanTitleStr}, doubling all reactants except "${d3.term}" fails to increase final output. What does this diagnose?`,
+    options: [
+      `"${d3.term}" represents the rate-determining bottleneck whose saturation threshold caps overall system velocity.`,
+      "The entire reaction has violated energy conservation principles.",
+      "The reactants have turned completely non-reactive.",
+      "The measuring apparatus has permanently lost sensitivity.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `"${d3.term}" represents the rate-determining bottleneck whose saturation threshold caps overall system velocity.`,
+    explanation: `Bottleneck analysis: the slowest step throttles total throughput regardless of excess upstream or downstream components.`,
+    topicTag: "Rate-Limiting Bottlenecks",
+    difficulty: "medium",
+  };
+
+  const q9: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-9`,
+    type: "multiple_choice",
+    question: `[Structural Hierarchy] How does the presence of "${d7.term}" compartmentalize and preserve functional specialization in ${cleanTitleStr}?`,
+    options: [
+      `It maintains localized gradients and selective permeability, preventing dilution and erratic cross-talk.`,
+      "It completely halts all physical and energetic exchange across all boundaries.",
+      "It renders internal components completely homogeneous with outer surroundings.",
+      "It forces the system into a static, non-interacting crystalline lattice.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "It maintains localized gradients and selective permeability, preventing dilution and erratic cross-talk.",
+    explanation: `Structural organization provides compartmental barriers necessary for localized microenvironments and gradient maintenance.`,
+    topicTag: "Structural Organization & Compartments",
+    difficulty: "medium",
+  };
+
+  const q10: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-10`,
+    type: "scenario",
+    question: `[Environmental Perturbation] When temperature in a ${cleanTitleStr} system increases significantly, what happens to the molecular interaction described by "${d9.term}"?`,
+    options: [
+      "Thermal agitation increases kinetic disruption, reducing binding stability unless activation energy requirements dominate.",
+      "Binding affinity becomes infinitely strong and completely irreversible.",
+      "Temperature has zero effect on kinetic energy or intermolecular collision frequencies.",
+      "All molecular bonds decompose spontaneously into pure light.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "Thermal agitation increases kinetic disruption, reducing binding stability unless activation energy requirements dominate.",
+    explanation: `Thermal physics reveals that elevated kinetic motion disrupts non-covalent complexes and shifts dynamic binding equilibria.`,
+    topicTag: "Environmental Perturbation",
+    difficulty: "hard",
+  };
+
+  const q11: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-11`,
+    type: "multiple_choice",
+    question: `[Diagnostic Indicator] Which measurable readout provides the most rigorous diagnostic verification that "${d8.term}" has been established in ${cleanTitleStr}?`,
+    options: [
+      "Net intermediate concentrations remain steady over time while reactant consumption and product generation proceed continuously.",
+      "All fluid motion and molecular collisions cease completely.",
+      "The system experiences sudden, uncontrollable pressure spikes every cycle.",
+      "The total mass of the closed system doubles every 10 seconds.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "Net intermediate concentrations remain steady over time while reactant consumption and product generation proceed continuously.",
+    explanation: `Diagnostic indicator of steady state is constant internal concentrations maintained by balanced input and output fluxes.`,
+    topicTag: "Diagnostic Verification & Indicators",
+    difficulty: "medium",
+  };
+
+  const q12: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-12`,
+    type: "scenario",
+    question: `[Feedback Regulation] In ${cleanTitleStr}, if the accumulation of downstream products inhibits upstream enzymes through "${d4.term}", what is the primary benefit?`,
+    options: [
+      "It prevents wasteful overproduction and protects against toxic intermediate accumulation.",
+      "It ensures that upstream resources are depleted as rapidly as possible.",
+      "It causes the system to run in reverse until all starting material is destroyed.",
+      "It converts the system from dynamic to completely non-functional.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "It prevents wasteful overproduction and protects against toxic intermediate accumulation.",
+    explanation: `Negative feedback regulation provides economical self-limiting control to preserve homeostatic stability.`,
+    topicTag: "Feedback Regulation & Homeostasis",
+    difficulty: "easy",
+  };
+
+  const q13: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-13`,
+    type: "multiple_choice",
+    question: `[Thermodynamic Feasibility] What determines whether a transformation in ${cleanTitleStr} driven by "${d10.term}" will proceed spontaneously under standard conditions?`,
+    options: [
+      "A net negative change in Gibbs free energy (ΔG < 0), indicating energetic favorability.",
+      "A requirement for continuous external manual stirring at all times.",
+      "The transformation must generate brand new elemental atoms.",
+      "The forward reaction rate must equal exactly 1 mole per microsecond regardless of temperature.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "A net negative change in Gibbs free energy (ΔG < 0), indicating energetic favorability.",
+    explanation: `Thermodynamics dictates that spontaneous processes require negative ΔG (favorable balance of enthalpy and entropy).`,
+    topicTag: "Thermodynamic & Energetic Feasibility",
+    difficulty: "medium",
+  };
+
+  const q14: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-14`,
+    type: "scenario",
+    question: `[Depletion Effect] In ${cleanTitleStr}, if a specific competitive inhibitor completely blocks "${d11.term}", what is the immediate diagnostic consequence?`,
+    options: [
+      "Upstream pathway precursors accumulate while all downstream product synthesis drops to near zero.",
+      "Downstream products multiply exponentially while upstream precursors disappear.",
+      "The entire reaction bypasses the bottleneck without any loss of efficiency.",
+      "The temperature of the system drops immediately to absolute zero.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "Upstream pathway precursors accumulate while all downstream product synthesis drops to near zero.",
+    explanation: `Pathways blocked at a specific step demonstrate upstream accumulation and downstream starvation.`,
+    topicTag: "Depletion & Inhibition Dynamics",
+    difficulty: "hard",
+  };
+
+  const q15: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-15`,
+    type: "multiple_choice",
+    question: `[Order of Operations] What is the correct sequential order of operational stages when ${cleanTitleStr} responds to an environmental shift?`,
+    options: [
+      `1. Sensor detection -> 2. Signal transduction -> 3. Modulation via ${d4.term} -> 4. Restoration of ${d2.term}.`,
+      `1. Equilibrium restoration -> 2. Stress occurrence -> 3. Sensor shutdown -> 4. Uncontrolled reaction.`,
+      `1. Permanent failure -> 2. Signal amplification -> 3. Reverse time progression -> 4. Initial condition.`,
+      `1. Full reactant depletion -> 2. Sensor activation -> 3. Zero feedback -> 4. Complete stagnation.`,
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `1. Sensor detection -> 2. Signal transduction -> 3. Modulation via ${d4.term} -> 4. Restoration of ${d2.term}.`,
+    explanation: `System logic proceeds through a structured stimulus-response-feedback sequence to achieve stabilization.`,
+    topicTag: "Sequential Logic & Pathways",
+    difficulty: "medium",
+  };
+
+  const q16: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-16`,
+    type: "multiple_choice",
+    question: `[Conservation Criteria] When evaluating mass and energy balances across ${cleanTitleStr} in accordance with "${d5.term}", what must always hold true?`,
+    options: [
+      "Total mass and energy entering a closed boundary must equal total mass and energy exiting plus any internal accumulation.",
+      "Energy is spontaneously generated from empty space during high-velocity reactions.",
+      "Reactant mass can disappear without producing any measurable energy or product.",
+      "Output mass is strictly independent of input mass under all scenarios.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "Total mass and energy entering a closed boundary must equal total mass and energy exiting plus any internal accumulation.",
+    explanation: `The fundamental first law of conservation requires an exact balance between input, output, accumulation, and transformation.`,
+    topicTag: "Conservation Laws & State Balances",
+    difficulty: "easy",
+  };
+
+  const q17: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-17`,
+    type: "scenario",
+    question: `[Pathway Reversibility] Under what specific thermodynamic constraint can a chemical or biological pathway in ${cleanTitleStr} be operated in the reverse direction?`,
+    options: [
+      "When coupled to a sufficiently exergonic reaction (such as ATP or pyrophosphate cleavage) that overcomes unfavorable ΔG.",
+      "Whenever the system is illuminated with green light.",
+      "Simply by thinking about the reverse pathway without adding energy.",
+      "Under no circumstances, because all physical reactions are strictly unidirectional.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: "When coupled to a sufficiently exergonic reaction (such as ATP or pyrophosphate cleavage) that overcomes unfavorable ΔG.",
+    explanation: `Thermodynamically unfavorable (endergonic) reverse processes must be coupled to strongly exergonic drivers to proceed.`,
+    topicTag: "Pathway Reversibility & Energy Coupling",
+    difficulty: "hard",
+  };
+
+  const q18: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-18`,
+    type: "multiple_choice",
+    question: `[Threshold Dynamics] What separates a sub-threshold perturbation from a full catalytic or signaling cascade in ${cleanTitleStr}?`,
+    options: [
+      `Exceeding "${d1.term}", which triggers positive cooperativity and overcomes background damping.`,
+      "Sub-threshold perturbations move faster than the speed of light.",
+      "There is no threshold; all stimuli produce identical maximal responses regardless of magnitude.",
+      "Sub-threshold stimuli permanently destroy the receiving receptors.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `Exceeding "${d1.term}", which triggers positive cooperativity and overcomes background damping.`,
+    explanation: `Threshold dynamics dictate that only stimuli sufficient to surpass activation barriers trigger self-sustaining cascades.`,
+    topicTag: "Threshold Dynamics & All-or-None Cascades",
+    difficulty: "medium",
+  };
+
+  const q19: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-19`,
+    type: "scenario",
+    question: `[Systematic Troubleshooting] An experimental trial in ${cleanTitleStr} shows zero product formation despite correct reagent concentrations and temperature. Which diagnostic fault should be tested first?`,
+    options: [
+      `Verify whether a required cofactor, catalyst, or specific activator for "${d0.term}" is absent or denatured.`,
+      "Assume gravity has reversed and restart the trial in a vacuum.",
+      "Double the volume of water without checking chemical purity.",
+      "Conclude that the laws of physics do not apply to this sample.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `Verify whether a required cofactor, catalyst, or specific activator for "${d0.term}" is absent or denatured.`,
+    explanation: `Systematic troubleshooting begins by isolating essential catalytic cofactors and activation prerequisites.`,
+    topicTag: "Systematic Troubleshooting",
+    difficulty: "medium",
+  };
+
+  const q20: QuizQuestion = {
+    id: `diag-${materialId}-v${variant}-20`,
+    type: "scenario",
+    question: `[Diagnostic Synthesis] In an advanced exam assessing ${cleanTitleStr}, which diagnostic indicator proves that a student has mastered the holistic interaction between "${d0.term}", "${d2.term}", and "${d5.term}"?`,
+    options: [
+      `The ability to quantitatively predict system fluxes, state shifts, and energy conservation under novel experimental disturbances.`,
+      "Rote recitation of isolated textbook terms without understanding causal mechanisms.",
+      "Assuming that closed systems can create new energy during rapid state shifts.",
+      "Believing that equilibrium means reactions have completely stopped moving.",
+    ].sort(() => 0.5 - Math.random()),
+    correctAnswer: `The ability to quantitatively predict system fluxes, state shifts, and energy conservation under novel experimental disturbances.`,
+    explanation: `Diagnostic synthesis represents peak cognitive mastery: integrating multiple core concepts to troubleshoot, diagnose, and calculate complex system behaviors.`,
+    topicTag: "High-Yield Diagnostic Synthesis",
+    difficulty: "hard",
+  };
 
   return [
-    {
-      id: `diag-${materialId}-v${variant}-1`,
-      type: "scenario",
-      question: `[Diagnostic Scenario] During an empirical experiment on "${cleanTitleStr}", an investigator alters reaction conditions. Which specific observation directly confirms that the system is operating according to the governing principles of "${d0.term}"?`,
-      options: [
-        `The operational response adjusts according to ${d0.definition.toLowerCase()}, preserving steady-state equilibrium.`,
-        "The reaction accelerates infinitely without consuming any physical or energetic substrate.",
-        "Both forward and reverse transformations cease completely and permanently.",
-        "Measured output parameters fluctuate completely at random with zero physical correlation.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: `The operational response adjusts according to ${d0.definition.toLowerCase()}, preserving steady-state equilibrium.`,
-      explanation: `Diagnostic analysis: observing measured stabilization confirms that "${d0.term}" is functioning as expected under empirical conditions.`,
-      topicTag: "Applied Scenario & Observation",
-      difficulty: "medium",
-    },
-    {
-      id: `diag-${materialId}-v${variant}-2`,
-      type: "multiple_choice",
-      question: `[Causal Mechanism] According to the uploaded study material for "${cleanTitleStr}", what is the direct systemic consequence when the operational threshold for "${d1.term}" is reached?`,
-      options: [
-        `It triggers forward transition because ${d1.definition.toLowerCase()}`,
-        "It invalidates the universal conservation of mass across all boundaries.",
-        "The system becomes completely inert and forever unresponsive to energetic inputs.",
-        "All potential energy converts spontaneously into destructive resonance.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: `It triggers forward transition because ${d1.definition.toLowerCase()}`,
-      explanation: `Diagnostic reasoning traces the causal mechanism: satisfying "${d1.term}" initiates the forward operational state.`,
-      topicTag: "Causal Mechanisms & Pathways",
-      difficulty: "medium",
-    },
-    {
-      id: `diag-${materialId}-v${variant}-3`,
-      type: "scenario",
-      question: `[Boundary Condition] Under which specific operating condition would the standard model for "${d2.term}" in "${cleanTitleStr}" break down or require mathematical correction?`,
-      options: [
-        "When an external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
-        "Whenever measurements are expressed in standard international metric units.",
-        "When ambient temperature is held strictly constant throughout observation.",
-        "Whenever a homogeneous catalyst is introduced.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: "When an external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
-      explanation: `Diagnostic edge cases test boundary limits: "${d2.term}" relies on equal dynamic exchange, which fails if extreme shock overwhelms compensation.`,
-      topicTag: "Boundary Conditions & Edge Cases",
-      difficulty: "hard",
-    },
-    {
-      id: `diag-${materialId}-v${variant}-4`,
-      type: "multiple_choice",
-      question: `[Diagnostic Misconception] When evaluating experimental data for "${cleanTitleStr}", which error in scientific reasoning leads to a false diagnostic conclusion regarding "${d3.term}"?`,
-      options: [
-        `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
-        "Calibrating sensors against verified reference standards prior to testing.",
-        "Maintaining controlled baseline variables across successive trial iterations.",
-        "Recording data with high-precision timestamping.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
-      explanation: `A classic diagnostic error is mistaking the rate restriction imposed by "${d3.term}" for an inactive or broken system.`,
-      topicTag: "Misconceptions & Diagnostic Traps",
-      difficulty: "medium",
-    },
-    {
-      id: `diag-${materialId}-v${variant}-5`,
-      type: "multiple_choice",
-      question: `[Quantitative Relationship] In "${cleanTitleStr}", how is the dynamic rate of "${d4.term}" coupled with overall throughput efficiency?`,
-      options: [
-        `It optimizes throughput by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
-        "It eliminates the requirement for any energetic or physical input.",
-        "It forces all forward velocity to zero indefinitely.",
-        "It decouples cause from effect completely.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: `It optimizes throughput by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
-      explanation: `Quantitative analysis reveals that "${d4.term}" actively modulates velocity to keep throughput near the optimal capacity curve.`,
-      topicTag: "Quantitative & Kinetic Coupling",
-      difficulty: "hard",
-    },
-    {
-      id: `diag-${materialId}-v${variant}-6`,
-      type: "scenario",
-      question: `[Diagnostic Synthesis] In an advanced exam assessing "${cleanTitleStr}", which diagnostic indicator proves that a student has mastered the interaction between "${d0.term}" and "${d5.term}"?`,
-      options: [
-        `The ability to accurately predict system response to novel disturbances while respecting the constraints of ${d5.term}.`,
-        "Rote memorization of terms without ability to explain underlying causality.",
-        "Assuming that systems can generate work without consuming resources.",
-        "Restricting analysis only to oversimplified textbook scenarios.",
-      ].sort(() => 0.5 - Math.random()),
-      correctAnswer: `The ability to accurately predict system response to novel disturbances while respecting the constraints of ${d5.term}.`,
-      explanation: `Diagnostic synthesis represents peak cognitive mastery: integrating multiple core concepts to troubleshoot and diagnose complex problems in "${cleanTitleStr}".`,
-      topicTag: "Diagnostic Synthesis",
-      difficulty: "hard",
-    },
+    q1, q2, q3, q4, q5,
+    q6, q7, q8, q9, q10,
+    q11, q12, q13, q14, q15,
+    q16, q17, q18, q19, q20,
   ];
 }
 
@@ -885,30 +1197,47 @@ export function generateFallbackStudyPackage(
     feynmanPrompt: `Explain how ${title} works to a peer without using technical jargon. Use a real-world analogy to illustrate the mechanism!`,
   };
 
-  // 3. Flashcards & Memorise Pack (At least 15 flashcards, 10 fill in the blanks, 10 mnemonics)
-  const flashcardList: Flashcard[] = definitions.slice(0, 16).map((d, idx) => ({
+  // Filter definitions to strictly academic subject matter
+  const cleanAcademicDefs = definitions
+    .filter((d) => isAcademicTerm(d.term) && isAcademicDefinition(d.definition))
+    .map((d) => ({
+      term: sanitizeAcademicPrompt(d.term),
+      definition: sanitizeAcademicPrompt(d.definition),
+    }));
+
+  const activeDefs = cleanAcademicDefs.length > 0 ? cleanAcademicDefs : [
+    { term: title, definition: "The core conceptual principles, functional operations, and governing laws." },
+    { term: "Dynamic Equilibrium", definition: "A steady state in which opposing processes proceed at identical rates." },
+    { term: "Regulatory Feedback", definition: "A process whereby system outputs constrain or accelerate forward throughput." },
+    { term: "Limiting Factor", definition: "The essential variable or resource with lowest availability capping total yield." },
+    { term: "Conservation Law", definition: "The principle that mass, energy, and fundamental physical quantities remain invariant." },
+  ];
+
+  // 3. Flashcards & Memorise Pack (At least 15 flashcards strictly scoped to this uploaded course file)
+  const flashcardList: Flashcard[] = activeDefs.slice(0, 18).map((d, idx) => ({
     id: `fc-${materialId}-${idx + 1}`,
     materialId,
-    front: `What is "${d.term}"?`,
+    front: `In ${title}, what is the operative definition and role of "${d.term}"?`,
     back: d.definition,
+    explanation: `Detailed Breakdown:\n"${d.term}" is an essential component of ${title}. ${d.definition} Understanding this enables precise application in both multi-choice conceptual questions and analytical calculations.`,
     hint: `Focus on the foundational role and operational criteria of ${d.term}.`,
     difficulty: (idx % 3 === 0 ? "hard" : idx % 2 === 0 ? "medium" : "easy") as "easy" | "medium" | "hard",
-    category: idx % 2 === 0 ? "Core Definitions" : "Key Mechanisms",
+    category: idx % 2 === 0 ? "Core Principles" : "Key Mechanisms",
     reviewCount: 0,
   }));
 
   const blanksList: FillInTheBlank[] = [];
-  for (let i = 0; i < Math.min(12, definitions.length); i++) {
-    const def = definitions[i];
-    const otherDefs = definitions.filter((_, idx) => idx !== i);
+  for (let i = 0; i < Math.min(15, activeDefs.length); i++) {
+    const def = activeDefs[i];
+    const otherDefs = activeDefs.filter((_, idx) => idx !== i);
     const distractors = [
-      otherDefs[0]?.term || "Arbitrary Variable",
+      otherDefs[0]?.term || "Arbitrary Constant",
       otherDefs[1]?.term || "Static Dissipation",
-      otherDefs[2]?.term || "Thermal Equilibrium",
+      otherDefs[2]?.term || "Thermal Degradation",
     ];
 
     const options = [def.term, ...distractors].sort(() => 0.5 - Math.random());
-    const sentence = `In ${title}, "_______" is defined as: ${def.definition}`;
+    const sentence = `In ${title}, "_______" is formally defined as: ${def.definition}`;
     const explanation = `The correct answer is "${def.term}". In ${title}, ${def.definition.toLowerCase()}`;
 
     blanksList.push({

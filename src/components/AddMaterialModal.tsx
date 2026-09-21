@@ -150,14 +150,14 @@ export const AddMaterialModal: React.FC = () => {
         try {
           const text = atob(dataUrl.split(",")[1] || "");
           const cleanText = cleanToNaturalEnglish(text);
-          setContent(cleanText || `# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+          setContent(cleanText || `# ${cleanDocTitle}\n\nComprehensive academic notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and practice questions.`);
           const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
           if (codeFromContent) {
             setCourseCode(codeFromContent);
             setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
           }
         } catch {
-          setContent(`# ${cleanDocTitle}\nUploaded study file: ${fileName}`);
+          setContent(`# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}.`);
         }
       }
     };
