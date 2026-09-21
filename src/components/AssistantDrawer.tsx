@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useStudy } from "../context/StudyContext";
 import {
   X,
@@ -30,28 +30,50 @@ export const AssistantDrawer: React.FC = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedMatId, setSelectedMatId] = useState<string>(activeMaterial?.id || (materials[0]?.id || ""));
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    {
-      id: "m1",
-      role: "assistant",
-      text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor.\n\nI have reviewed your course materials and I am ready to give you **detailed explanations**, break down **complex mechanisms**, quiz you on high-yield questions, or provide **custom mnemonics**.\n\nWhat would you like to explore from your uploaded material?`,
-      timestamp: "Just now",
-    },
-  ]);
+  
+  // Isolated per-material chat state
+  const [messagesByMaterial, setMessagesByMaterial] = useState<Record<string, ChatMessage[]>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const currentConnectedMaterial = materials.find((m) => m.id === selectedMatId) || activeMaterial || materials[0] || null;
+  const currentMaterialId = currentConnectedMaterial?.id || "global";
 
   useEffect(() => {
     if (activeMaterial && activeMaterial.id !== selectedMatId) {
       setSelectedMatId(activeMaterial.id);
     }
-  }, [activeMaterial]);
+  }, [activeMaterial?.id]);
+
+  // Derive current material's message thread
+  const currentMessages: ChatMessage[] = useMemo(() => {
+    if (messagesByMaterial[currentMaterialId]) {
+      return messagesByMaterial[currentMaterialId];
+    }
+    const mat = currentConnectedMaterial;
+    if (mat) {
+      return [
+        {
+          id: `m-init-${mat.id}`,
+          role: "assistant",
+          text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor for **${mat.title}**${mat.courseCode ? ` (${mat.courseCode})` : ""}.\n\nI have analyzed your **${mat.subject}** study material and I am ready to:\n- Provide **step-by-step concept explanations**\n- Break down **governing mechanisms & formulas**\n- Quiz you with **diagnostic exam questions**\n- Generate **custom memory mnemonics**\n\nWhat would you like to explore from "${mat.title}"?`,
+          timestamp: "Just now",
+        },
+      ];
+    }
+    return [
+      {
+        id: "m1",
+        role: "assistant",
+        text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor.\n\nUpload or select a study deck to receive personalized explanations, flashcard drills, and exam prep.`,
+        timestamp: "Just now",
+      },
+    ];
+  }, [messagesByMaterial, currentMaterialId, currentConnectedMaterial, user.name]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [currentMessages, loading]);
 
   if (!isAssistantOpen) return null;
 
@@ -66,7 +88,14 @@ export const AssistantDrawer: React.FC = () => {
       timestamp: "Just now",
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    const targetMatId = currentMaterialId;
+    const baseHistory = currentMessages;
+    const updatedHistory = [...baseHistory, userMsg];
+
+    setMessagesByMaterial((prev) => ({
+      ...prev,
+      [targetMatId]: updatedHistory,
+    }));
     setInput("");
     setLoading(true);
 
@@ -74,6 +103,7 @@ export const AssistantDrawer: React.FC = () => {
       const mat = currentConnectedMaterial;
       const richContext = mat
         ? `Active Material: "${mat.title}" (${mat.subject})
+Course Code: ${mat.courseCode || "General"}
 Summary: ${mat.summary || "No summary"}
 Key Topics: ${(mat.mainTopics || []).join(", ")}
 Definitions: ${(mat.definitions || []).slice(0, 15).map((d) => `${d.term}: ${d.definition}`).join("; ")}
@@ -89,7 +119,7 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
           message: queryText,
           studyContext: richContext,
           currentMaterial: mat ? { title: mat.title, subject: mat.subject, summary: mat.summary } : null,
-          history: messages.slice(-4).map((m) => ({
+          history: baseHistory.slice(-4).map((m) => ({
             role: m.role === "user" ? "user" : "model",
             parts: [{ text: m.text }],
           })),
@@ -102,25 +132,28 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
         data.answer ||
         "I'm here to help you master this material! Tell me what concept or question you'd like to work through.";
 
-      setMessages((prev) => [
+      const aiMsg: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        role: "assistant",
+        text: replyText,
+        timestamp: "Just now",
+      };
+
+      setMessagesByMaterial((prev) => ({
         ...prev,
-        {
-          id: `ai-${Date.now()}`,
-          role: "assistant",
-          text: replyText,
-          timestamp: "Just now",
-        },
-      ]);
+        [targetMatId]: [...(prev[targetMatId] || updatedHistory), aiMsg],
+      }));
     } catch {
-      setMessages((prev) => [
+      const errorMsg: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        role: "assistant",
+        text: "I experienced a brief communication pause. Please feel free to ask again!",
+        timestamp: "Just now",
+      };
+      setMessagesByMaterial((prev) => ({
         ...prev,
-        {
-          id: `ai-${Date.now()}`,
-          role: "assistant",
-          text: "I experienced a brief communication pause. Please feel free to ask again!",
-          timestamp: "Just now",
-        },
-      ]);
+        [targetMatId]: [...(prev[targetMatId] || updatedHistory), errorMsg],
+      }));
     } finally {
       setLoading(false);
     }
@@ -282,7 +315,7 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
 
         {/* Messages Stream */}
         <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
-          {messages.map((m) => {
+          {currentMessages.map((m) => {
             const isUser = m.role === "user";
             return (
               <div

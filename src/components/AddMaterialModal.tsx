@@ -43,6 +43,7 @@ export const AddMaterialModal: React.FC = () => {
     saveGeneratedQuiz,
     saveGeneratedLesson,
     setActiveTab,
+    setActiveMaterial,
   } = useStudy();
 
   const [activeImportType, setActiveImportType] = useState<SourceType>(initialImportType || "upload");
@@ -54,13 +55,35 @@ export const AddMaterialModal: React.FC = () => {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
   const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const currentUploadIdRef = useRef<string>("");
+
+  const resetFormState = (initialQ = "", initialType: SourceType = "upload") => {
+    currentUploadIdRef.current = "";
+    setTitle(initialQ || "");
+    setContent("");
+    setCourseCode("");
+    setSubject("Other");
+    setUploadedFileName(null);
+    setUploadedFileUrl(null);
+    setImagePreview(null);
+    setIsExtractingDoc(false);
+    setIsProcessing(false);
+    setProcessingStage(0);
+    setCreatedMaterial(null);
+    setYoutubeUrl("");
+    setYoutubeExtractSuccess(null);
+    setIsExtractingYoutube(false);
+    setActiveImportType(initialType);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   React.useEffect(() => {
     if (isAddMaterialModalOpen) {
-      if (initialImportType) setActiveImportType(initialImportType);
-      if (initialImportQuery) setTitle(initialImportQuery);
+      resetFormState(initialImportQuery, initialImportType || "upload");
     }
-  }, [isAddMaterialModalOpen, initialImportType, initialImportQuery]);
+  }, [isAddMaterialModalOpen]);
 
   // Recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -106,10 +129,10 @@ export const AddMaterialModal: React.FC = () => {
       const data = await res.json();
       if (data?.success && data?.data) {
         const item = data.data;
-        if (item.title && !title) {
+        if (item.title) {
           setTitle(cleanTitle(item.title));
         }
-        if (item.courseCode && !courseCode) {
+        if (item.courseCode) {
           setCourseCode(item.courseCode);
         }
         if (item.subject) {
@@ -142,38 +165,46 @@ export const AddMaterialModal: React.FC = () => {
     }
   };
 
-  // Drag and drop / File upload handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // Unified File Processing with Strict Request-Id Isolation
+  const processSelectedFile = (file: File) => {
     if (!file) return;
+
+    // Generate unique isolation ID for this specific upload action
+    const uploadId = `up-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    currentUploadIdRef.current = uploadId;
 
     const fileName = file.name;
     const cleanDocTitle = cleanTitle(fileName.replace(/\.[^/.]+$/, ""));
+
+    // Immediately isolate & override state with new file identity (never preserve old file data)
     setUploadedFileName(fileName);
+    setTitle(cleanDocTitle);
+    setImagePreview(null);
+    setUploadedFileUrl(null);
 
     const detectedCode = extractCourseCode(fileName, undefined, cleanDocTitle);
     if (detectedCode) {
       setCourseCode(detectedCode);
       setSubject(detectSubjectFromCodeOrTitle(detectedCode));
     } else {
+      setCourseCode("");
       setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle));
     }
 
-    if (!title) {
-      setTitle(cleanDocTitle);
-    }
+    setIsExtractingDoc(true);
+    setContent(`Extracting readable lecture notes and academic content from "${fileName}"...`);
 
     const reader = new FileReader();
     reader.onload = async (event) => {
+      // Guard against stale reader callbacks if another file was chosen in the meantime
+      if (currentUploadIdRef.current !== uploadId) return;
+
       const dataUrl = event.target?.result as string;
       setUploadedFileUrl(dataUrl);
 
       if (file.type.startsWith("image/")) {
         setImagePreview(dataUrl);
       }
-
-      setIsExtractingDoc(true);
-      setContent(`Extracting readable lecture notes and academic content from "${fileName}"...`);
 
       try {
         const res = await fetch("/api/extract-document", {
@@ -185,7 +216,13 @@ export const AddMaterialModal: React.FC = () => {
             fileName,
           }),
         });
+
+        // Guard against race conditions where another upload started during the fetch
+        if (currentUploadIdRef.current !== uploadId) return;
+
         const json = await res.json();
+        if (currentUploadIdRef.current !== uploadId) return;
+
         if (json?.success && json.text && json.text.trim().length > 15) {
           const cleanText = cleanToNaturalEnglish(json.text);
           setContent(cleanText);
@@ -202,15 +239,47 @@ export const AddMaterialModal: React.FC = () => {
           );
         }
       } catch (extractErr) {
+        if (currentUploadIdRef.current !== uploadId) return;
         console.warn("Document extraction error:", extractErr);
         setContent(
           `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
         );
       } finally {
-        setIsExtractingDoc(false);
+        if (currentUploadIdRef.current === uploadId) {
+          setIsExtractingDoc(false);
+        }
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processSelectedFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processSelectedFile(file);
+    }
   };
 
   // Audio recording handlers
@@ -283,7 +352,7 @@ export const AddMaterialModal: React.FC = () => {
       });
     }, 500);
 
-    const newMaterialId = `mat-${Date.now()}`;
+    const newMaterialId = `mat-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     
     const finalCourseCode =
       courseCode.trim() ||
@@ -307,6 +376,7 @@ export const AddMaterialModal: React.FC = () => {
 
     let resolvedMaterial = {
       ...fallbackPkg.material,
+      id: newMaterialId,
       courseCode: finalCourseCode,
       subject: finalSubject,
       fileUrl: uploadedFileUrl || imagePreview || undefined,
@@ -434,7 +504,10 @@ export const AddMaterialModal: React.FC = () => {
   };
 
   const handleFinishAction = (targetTab: ActiveTab) => {
-    setIsProcessing(false);
+    if (createdMaterial) {
+      setActiveMaterial(createdMaterial);
+    }
+    resetFormState();
     setIsAddMaterialModalOpen(false);
     setActiveTab(targetTab);
   };
@@ -690,11 +763,18 @@ export const AddMaterialModal: React.FC = () => {
                 <div>
                   <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-slate-300 hover:border-[#0A1931] rounded-xl p-6 text-center cursor-pointer transition bg-white"
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition ${
+                      isDragOver
+                        ? "border-[#0A1931] bg-blue-50/50 scale-[1.01]"
+                        : "border-slate-300 hover:border-[#0A1931] bg-white"
+                    }`}
                   >
-                    <Upload className="w-8 h-8 text-[#0A1931] mx-auto mb-2" />
+                    <Upload className={`w-8 h-8 mx-auto mb-2 transition ${isDragOver ? "text-blue-600 scale-110" : "text-[#0A1931]"}`} />
                     <p className="text-sm font-bold text-[#0A1931]">
-                      Click to upload or drag & drop study files
+                      {isDragOver ? "Drop your file here to upload" : "Click to upload or drag & drop study files"}
                     </p>
                     <p className="text-xs text-[#1B2A4A]/70 mt-1">
                       Supports PDF, DOC, DOCX, PPT, PPTX, TXT, Images
