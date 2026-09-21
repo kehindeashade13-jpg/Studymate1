@@ -51,6 +51,12 @@ export const LibraryView: React.FC = () => {
     activeMaterial || materials[0] || null
   );
 
+  React.useEffect(() => {
+    if (activeMaterial) {
+      setSelectedMaterialForNotes(activeMaterial);
+    }
+  }, [activeMaterial?.id]);
+
   // Notes editing state
   const [isEditingPersonalNotes, setIsEditingPersonalNotes] = useState(false);
   const [personalNotesDraft, setPersonalNotesDraft] = useState("");
@@ -472,31 +478,45 @@ export const LibraryView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Definitions & Terms */}
+                {/* Definitions & Terms strictly for this uploaded file */}
                 {(currentNotes?.definitions?.length || selectedMaterialForNotes.definitions?.length) ? (
                   <div className="space-y-3">
-                    <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5 text-purple-600" />
-                      <span>Flashcard Terms & Definitions</span>
-                    </h3>
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <Layers className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Definitions & Flashcards for {selectedMaterialForNotes.title}</span>
+                      </h3>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                        Isolated to this course file ({selectedMaterialForNotes.courseCode || selectedMaterialForNotes.subject})
+                      </span>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      {(currentNotes?.definitions || selectedMaterialForNotes.definitions || []).map(
-                        (def: any, idx: number) => (
+                      {(currentNotes?.definitions || selectedMaterialForNotes.definitions || [])
+                        .filter(
+                          (def: any) =>
+                            def?.term &&
+                            def?.definition &&
+                            !/uploaded study file/i.test(def.term) &&
+                            !/uploaded study file/i.test(def.definition)
+                        )
+                        .map((def: any, idx: number) => (
                           <div
                             key={idx}
-                            className="p-3 rounded-xl bg-[#FAF9F5] border border-[#E8E5DD] space-y-1"
+                            className="p-3.5 rounded-xl bg-[#FAF9F5] border border-[#E8E5DD] space-y-1.5 hover:border-purple-300 transition"
                           >
-                            <CleanFormattedText
-                              as="span"
-                              content={def.term}
-                              className="text-xs font-bold text-purple-700 block"
-                            />
+                            <div className="flex items-center justify-between">
+                              <CleanFormattedText
+                                as="span"
+                                content={def.term}
+                                className="text-xs font-bold text-purple-700 block"
+                              />
+                              <span className="text-[9px] text-slate-400 font-semibold">Term #{idx + 1}</span>
+                            </div>
                             <div className="text-xs text-slate-600 leading-relaxed">
                               <CleanFormattedText content={def.definition} />
                             </div>
                           </div>
-                        )
-                      )}
+                        ))}
                     </div>
                   </div>
                 ) : null}

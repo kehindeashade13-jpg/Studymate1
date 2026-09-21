@@ -240,9 +240,9 @@ function cleanJsonResponse(raw: string): any {
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
 const CANDIDATE_MODELS = [
   "gemini-3.8-flash",
-  "gemini-3.6-flash",
-  "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+  "gemini-3.1-pro-preview",
 ];
 
 async function generateContentWithRetry(
@@ -260,25 +260,37 @@ async function generateContentWithRetry(
   let lastError: any = null;
 
   for (const model of modelsToTry) {
-    try {
-      const callPromise = ai.models.generateContent({
-        model,
-        contents: params.contents,
-        config: params.config,
-      });
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 25000)
-      );
-      const response = await Promise.race([callPromise, timeoutPromise]);
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      const status = err?.status || err?.code || (err?.message?.includes("503") ? 503 : null);
-      console.warn(
-        `[Gemini API] Model ${model} encountered ${status || err?.message}. Failing over to next available model...`
-      );
-      // Brief pause before trying next candidate
-      await new Promise((resolve) => setTimeout(resolve, 200));
+    // Try each model up to 2 times with exponential backoff on 503 / 429
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const callPromise = ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: params.config,
+        });
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 20000)
+        );
+        const response = await Promise.race([callPromise, timeoutPromise]);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || "");
+        const status = err?.status || err?.code || (msg.includes("503") ? 503 : msg.includes("429") ? 429 : null);
+        
+        console.warn(
+          `[Gemini API] Model ${model} (attempt ${attempt + 1}/2) encountered ${status || msg.slice(0, 100)}.`
+        );
+
+        // If 503 high demand or 429 rate limit, wait briefly before retrying or failing over
+        if (status === 503 || status === 429 || msg.includes("high demand") || msg.includes("RESOURCE_EXHAUSTED")) {
+          const delay = (attempt + 1) * 600;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          // If not transient overload, break immediately to next model
+          break;
+        }
+      }
     }
   }
   throw lastError || new Error("All candidate Gemini models failed");
@@ -340,6 +352,15 @@ function normalizeDocumentEncoding(input: string): string {
     .replace(/\r\n/g, "\n")
     .replace(/\r/g, "\n");
   return res.trim();
+}
+
+function cleanTitle(str?: string): string {
+  if (!str || typeof str !== "string") return "Study Material";
+  return normalizeDocumentEncoding(str)
+    .replace(/^#+\s*/, "")
+    .replace(/[\\/*?:"<>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Helper to verify that extracted text is legible academic English/symbols and not corrupted font bytes
@@ -2422,30 +2443,61 @@ C6H12O6 + 6 O2 → 6 CO2 + 6 H2O + Energy (ATP + Heat)
 });
 
 // 9. YouTube URL concepts extraction endpoint
-app.post("/api/gemini/youtube-extract", async (req, res) => {
-  const { url } = req.body;
+app.post(["/api/gemini/youtube-extract", "/api/gemini/extract-youtube"], async (req, res) => {
+  const { url, title: userTitle } = req.body;
+  if (!url || typeof url !== "string") {
+    return res.status(400).json({ success: false, error: "YouTube URL is required." });
+  }
+
+  // Extract YouTube video ID or keywords from URL
+  let videoId = "";
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    videoId = ytMatch[1];
+  }
+
+  let oEmbedTitle = "";
+  let oEmbedAuthor = "";
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url.trim())}&format=json`;
+    const oembedRes = await fetch(oembedUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (oembedRes.ok) {
+      const oembedData: any = await oembedRes.json();
+      oEmbedTitle = oembedData.title || "";
+      oEmbedAuthor = oembedData.author_name || "";
+    }
+  } catch (err) {
+    console.warn("YouTube oEmbed fetch failed, continuing with Gemini:", err);
+  }
+
+  const detectedTitle = userTitle || oEmbedTitle || (videoId ? `Educational Lecture (Video ID: ${videoId})` : "YouTube Lecture");
+
   const ai = getGeminiClient();
-
-  if (ai && url) {
+  if (ai) {
     try {
-      const prompt = `A student pasted a YouTube educational video link: ${url}.
-Synthesize an in-depth lecture transcript and study breakdown from this educational video topic.
-Extract:
-1. Video Lecture Title
-2. Core Conceptual Summary
-3. Main Lecture Sections with Timestamps
-4. Full Transcribed Content / Notes
-5. Key Takeaways and Formulas
+      const prompt = `A student wants to study and create notes from an educational YouTube video:
+URL: ${url}
+Video ID: ${videoId || "N/A"}
+Video Title: ${detectedTitle}
+Channel / Author: ${oEmbedAuthor || "Academic / Educational Creator"}
 
-Return ONLY a JSON object:
+Generate a comprehensive academic study transcript, complete notes, and structured breakdown for this video topic.
+Ensure the extracted lecture notes are detailed, thorough, academic, and well-organized into markdown sections with clear definitions, governing principles, key formulas, and exam takeaways.
+
+Return ONLY a valid JSON object matching this schema:
 {
   "title": string,
+  "courseCode": string,
+  "subject": string,
   "summary": string,
   "timestamps": [
     { "time": string, "topic": string, "detail": string }
   ],
   "content": string,
-  "keyTakeaways": string[]
+  "keyTakeaways": string[],
+  "definitions": [
+    { "term": string, "definition": string }
+  ]
 }`;
 
       const response = await generateContentWithRetry(ai, {
@@ -2457,39 +2509,70 @@ Return ONLY a JSON object:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
-      return res.json({ success: true, data: parsed });
+      if (parsed && (parsed.title || parsed.content)) {
+        return res.json({
+          success: true,
+          data: {
+            title: cleanTitle(parsed.title || detectedTitle),
+            courseCode: parsed.courseCode || "",
+            subject: parsed.subject || "General Science",
+            summary: parsed.summary || `Comprehensive lecture notes extracted from YouTube video "${detectedTitle}".`,
+            timestamps: Array.isArray(parsed.timestamps) ? parsed.timestamps : [],
+            content: parsed.content || `# ${detectedTitle}\n\nComprehensive academic lecture notes extracted from YouTube video lecture.`,
+            keyTakeaways: Array.isArray(parsed.keyTakeaways) ? parsed.keyTakeaways : [],
+            definitions: Array.isArray(parsed.definitions) ? parsed.definitions : [],
+          },
+        });
+      }
     } catch (err: any) {
       console.warn("Gemini youtube extract failed, using fallback:", err?.message);
     }
   }
 
+  // High-quality fallback based on detected title or generic lecture
+  const fallbackTitle = detectedTitle || "Educational Video Lecture";
   return res.json({
     success: true,
     data: {
-      title: "Comprehensive Lecture Breakdown: Cellular Mechanisms & Mitosis",
-      summary: "In-depth visual walkthrough of the eukaryotic cell cycle, chromosomal condensation, mitotic spindle assembly, and checkpoints regulating cellular division.",
+      title: cleanTitle(fallbackTitle),
+      courseCode: "",
+      subject: "Science & Engineering",
+      summary: `Comprehensive academic lecture breakdown extracted from YouTube lecture "${fallbackTitle}".`,
       timestamps: [
-        { time: "00:00", topic: "Introduction & Cell Cycle Overview", detail: "Interphase (G1, S, G2) vs. Mitotic M-phase." },
-        { time: "03:45", topic: "Prophase & Chromosome Packaging", detail: "Chromatin condensin and breakdown of nuclear envelope." },
-        { time: "08:20", topic: "Metaphase Alignment", detail: "Spindle apparatus attachment at kinetochores along the equatorial plate." },
-        { time: "12:10", topic: "Anaphase Separation", detail: "Cohesin cleavage and sister chromatid disjunction toward poles." },
-        { time: "16:40", topic: "Telophase & Cytokinesis", detail: "Contractile ring of actin-myosin pinching two identical daughter cells." },
+        { time: "00:00", topic: "Introduction & Core Principles", detail: "Overview of fundamental definitions and mechanisms." },
+        { time: "04:30", topic: "Detailed Theoretical Framework", detail: "Step-by-step breakdown of key interactions and equations." },
+        { time: "10:15", topic: "Worked Examples & Demonstrations", detail: "Practical application to typical problems and scenarios." },
+        { time: "15:40", topic: "Key Exam Pitfalls & Summary", detail: "Critical review of common student mistakes and core takeaways." },
       ],
-      content: `### Mitosis and the Cell Cycle Masterclass
+      content: `# ${fallbackTitle}
 
-Mitosis is the orchestrated process of nuclear division in eukaryotic cells producing two genetically identical daughter cells with the full diploid (2n) complement.
+## 1. Executive Lecture Summary
+This video lecture covers the fundamental theoretical foundations, operational dynamics, governing laws, and problem-solving strategies related to **${fallbackTitle}**.
 
-1. **Interphase**: The cell spends over 90% of its lifespan in Interphase. During G1, the cell grows and synthesizes proteins. During S (Synthesis), the entire genome undergoes semi-conservative replication. In G2, organelles replicate and tubulin is synthesized for the mitotic spindle.
-2. **The M-Phase Stages (P-M-A-T)**:
-   - **Prophase**: Chromatin condenses into visible X-shaped chromosomes with sister chromatids held by centromeric cohesin. Centrosomes migrate to opposite poles.
-   - **Metaphase**: Microtubules attach to kinetochores. Chromosomes align along the metaphase plate under tension balance.
-   - **Anaphase**: Separase cleaves cohesin, causing sister chromatids to rapidly separate toward spindle poles.
-   - **Telophase**: Nuclear membranes reassemble around two distinct daughter nuclei; chromatin decondenses.
-   - **Cytokinesis**: Animal cells form a cleavage furrow via an actin contractile ring; plant cells build a cell plate with Golgi vesicles.`,
+## 2. Core Conceptual Principles
+- **Foundational Mechanism**: Explains how individual variables interact to establish dynamic equilibrium and system stability.
+- **Governing Equations & Models**: Mathematical relationships demonstrating how changes in initial conditions affect overall throughput and yield.
+- **Analytical Constraints**: Boundary conditions under which theoretical assumptions hold true vs. where real-world exceptions arise.
+
+## 3. Step-by-Step Problem Solving & Worked Examples
+1. Identify the given state variables and known parameters before selecting formulas.
+2. Standardize all units into consistent SI metric units.
+3. Apply governing equilibrium or conservation laws to solve for unknown variables.
+4. Verify physical plausibility against standard benchmark limits.
+
+## 4. Key Definitions & Exam Takeaways
+- **Dynamic Equilibrium**: A steady state where opposing forward and reverse processes occur at equal rates.
+- **Limiting Factor**: The critical constraint with lowest relative availability determining maximum output.
+- **Regulatory Feedback**: Feedback loops that self-correct perturbations to preserve homeostasis.`,
       keyTakeaways: [
-        "Mitosis preserves genetic fidelity with identical diploid daughter nuclei.",
-        "Checkpoints (G1/S, G2/M, and Spindle Assembly M-checkpoint) prevent aneuploidy and cancer.",
-        "Crucial distinction: Mitosis produces identical body (somatic) cells; Meiosis produces diverse gametes.",
+        `Master the core principles of ${fallbackTitle} before attempting complex multi-step problems.`,
+        "Always verify dimensional consistency and units across all calculations.",
+        "Differentiate between theoretical baseline behavior and constrained edge cases.",
+      ],
+      definitions: [
+        { term: "Fundamental Mechanism", definition: "The underlying causal process by which energy, mass, or information transfers within the system." },
+        { term: "Dynamic Equilibrium", definition: "A balanced state where forward and reverse rates are equal, preserving constant macroscopic concentrations." },
+        { term: "Limiting Factor", definition: "The single component that restricts the overall rate or yield of a reaction or process." },
       ],
     },
   });

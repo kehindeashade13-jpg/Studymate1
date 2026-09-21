@@ -199,13 +199,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [materials, setMaterials] = useState<StudyMaterial[]>(() => {
     try {
       const saved = localStorage.getItem("studymate_materials");
-      if (saved && (saved.includes("mat-bio-1") || saved.includes("Cell Division"))) {
-        localStorage.removeItem("studymate_materials");
-        return [];
-      }
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((m: StudyMaterial) => sanitizeMaterial(m));
         }
       }
@@ -215,36 +211,23 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
-  const [activeMaterial, setActiveMaterial] = useState<StudyMaterial | null>(materials[0] || null);
+  const [activeMaterial, setActiveMaterial] = useState<StudyMaterial | null>(() => materials[0] || null);
 
   const [notes, setNotes] = useState<Record<string, StudyNotes>>(() => {
     try {
       const saved = localStorage.getItem("studymate_notes");
-      if (saved && saved.includes("mat-bio-1")) {
-        localStorage.removeItem("studymate_notes");
-        return {};
-      }
       if (saved) {
         const parsed: Record<string, StudyNotes> = JSON.parse(saved);
         const cleaned: Record<string, StudyNotes> = {};
         for (const [id, n] of Object.entries(parsed)) {
-          if (n && Array.isArray(n.definitions) && n.definitions.some((d) => isGarbledText(d.term) || isGarbledText(d.definition))) {
-            const correspondingMat = materials.find((m) => m.id === id);
-            const defs = correspondingMat?.definitions || [];
+          if (n) {
             cleaned[id] = {
               ...n,
-              topicTitle: cleanTitle(n.topicTitle),
-              definitions: defs.map((d) => ({
-                term: d.term,
-                definition: d.definition,
-                context: `Core concept in ${cleanTitle(n.topicTitle)}.`,
-              })),
+              topicTitle: cleanTitle(n.topicTitle || id),
             };
-          } else {
-            cleaned[id] = n;
           }
         }
-        return cleaned;
+        return Object.keys(cleaned).length > 0 ? cleaned : initialNotes;
       }
       return initialNotes;
     } catch {
@@ -255,10 +238,6 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [memorisePacks, setMemorisePacks] = useState<Record<string, MemorisePack>>(() => {
     try {
       const saved = localStorage.getItem("studymate_memorise");
-      if (saved && saved.includes("mat-bio-1")) {
-        localStorage.removeItem("studymate_memorise");
-        return {};
-      }
       return saved ? JSON.parse(saved) : initialMemorise;
     } catch {
       return initialMemorise;
@@ -268,10 +247,6 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [quizzes, setQuizzes] = useState<Record<string, Quiz>>(() => {
     try {
       const saved = localStorage.getItem("studymate_quizzes");
-      if (saved && saved.includes("mat-bio-1")) {
-        localStorage.removeItem("studymate_quizzes");
-        return {};
-      }
       return saved ? JSON.parse(saved) : initialQuizzes;
     } catch {
       return initialQuizzes;
@@ -281,10 +256,6 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [lessons, setLessons] = useState<Record<string, StepLesson>>(() => {
     try {
       const saved = localStorage.getItem("studymate_lessons");
-      if (saved && saved.includes("mat-bio-1")) {
-        localStorage.removeItem("studymate_lessons");
-        return {};
-      }
       return saved ? JSON.parse(saved) : initialLessons;
     } catch {
       return initialLessons;
@@ -428,19 +399,34 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const json = await res.json();
         if (isMounted && json.success && json.data) {
           const d = json.data;
-          if (Array.isArray(d.materials) && d.materials.length > 0) {
-            setMaterials(d.materials.map((m: StudyMaterial) => ({ ...m, title: cleanTitle(m.title) })));
+          if (Array.isArray(d.materials)) {
+            setMaterials((prev) => {
+              const map = new Map<string, StudyMaterial>();
+              // Add server materials
+              for (const m of d.materials) {
+                if (m && m.id) {
+                  map.set(m.id, sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
+                }
+              }
+              // Merge existing local materials (including ones uploaded before reload or during initialization)
+              for (const m of prev) {
+                if (m && m.id && !map.has(m.id)) {
+                  map.set(m.id, sanitizeMaterial(m));
+                }
+              }
+              return Array.from(map.values());
+            });
           }
-          if (d.notes && Object.keys(d.notes).length > 0) setNotes(d.notes);
-          if (d.memorisePacks && Object.keys(d.memorisePacks).length > 0) setMemorisePacks(d.memorisePacks);
-          if (d.quizzes && Object.keys(d.quizzes).length > 0) setQuizzes(d.quizzes);
-          if (d.lessons && Object.keys(d.lessons).length > 0) setLessons(d.lessons);
-          if (Array.isArray(d.studyGroups)) setStudyGroups(d.studyGroups);
-          if (d.groupMessages) setGroupMessages(d.groupMessages);
-          if (Array.isArray(d.friends)) setFriends(d.friends);
+          if (d.notes && Object.keys(d.notes).length > 0) setNotes((prev) => ({ ...prev, ...d.notes }));
+          if (d.memorisePacks && Object.keys(d.memorisePacks).length > 0) setMemorisePacks((prev) => ({ ...prev, ...d.memorisePacks }));
+          if (d.quizzes && Object.keys(d.quizzes).length > 0) setQuizzes((prev) => ({ ...prev, ...d.quizzes }));
+          if (d.lessons && Object.keys(d.lessons).length > 0) setLessons((prev) => ({ ...prev, ...d.lessons }));
+          if (Array.isArray(d.studyGroups) && d.studyGroups.length > 0) setStudyGroups(d.studyGroups);
+          if (d.groupMessages && Object.keys(d.groupMessages).length > 0) setGroupMessages((prev) => ({ ...prev, ...d.groupMessages }));
+          if (Array.isArray(d.friends) && d.friends.length > 0) setFriends(d.friends);
           if (d.studyPlan) setStudyPlan(d.studyPlan);
           if (d.progress) setProgress(d.progress);
-          if (Array.isArray(d.achievements)) setAchievements(d.achievements);
+          if (Array.isArray(d.achievements) && d.achievements.length > 0) setAchievements(d.achievements);
           if (d.user) {
             setUser((prev) => ({
               ...prev,
@@ -604,7 +590,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addMaterial = (material: StudyMaterial) => {
     const cleaned = sanitizeMaterial(material);
-    setMaterials((prev) => [cleaned, ...prev]);
+    setMaterials((prev) => [cleaned, ...prev.filter((m) => m.id !== cleaned.id)]);
     setActiveMaterial(cleaned);
     addXP(50, "Material Imported");
 

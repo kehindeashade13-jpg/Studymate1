@@ -48,24 +48,47 @@ export const MemoriseView: React.FC = () => {
   const [blankSelectedOption, setBlankSelectedOption] = useState<Record<number, string>>({});
   const [blankChecked, setBlankChecked] = useState<Record<number, boolean>>({});
 
-  // Ensure exactly 15 flashcards (pulled from material definitions/concepts)
+  // Ensure exactly 15 flashcards strictly grounded in this uploaded course file (no meta questions)
   const fullFlashcards: Flashcard[] = useMemo(() => {
-    if (!currentPack || !activeMaterial) return [];
-    const baseCards = [...currentPack.flashcards];
-    if (baseCards.length >= 15) return baseCards;
+    if (!activeMaterial) return [];
+    
+    // Filter existing cards to strip out any meta references
+    const cleanBaseCards = (currentPack?.flashcards || []).filter((fc) => {
+      const txt = (fc.front + " " + fc.back + " " + (fc.explanation || "")).toLowerCase();
+      return (
+        !txt.includes("uploaded study file") &&
+        !txt.includes("uploaded file") &&
+        !txt.includes("what is the file") &&
+        !txt.includes("in this file") &&
+        !txt.includes("what is the uploaded")
+      );
+    });
 
-    const defs = activeMaterial.definitions && activeMaterial.definitions.length > 0
-      ? activeMaterial.definitions
+    const defs = (activeMaterial.definitions || []).filter(
+      (d) =>
+        d.term &&
+        d.definition &&
+        !/uploaded study file/i.test(d.term) &&
+        !/uploaded study file/i.test(d.definition) &&
+        !/uploaded file/i.test(d.term) &&
+        !/uploaded file/i.test(d.definition)
+    );
+
+    const safeDefs = defs.length > 0
+      ? defs
       : [
-          { term: activeMaterial.title, definition: activeMaterial.summary || "Core conceptual foundation." },
-          { term: "Equilibrium Mechanism", definition: "A state in which opposing forces or influences are balanced." },
-          { term: "Regulatory Feedback", definition: "A process in which system outputs modify or constrain forward operational rates." },
+          { term: activeMaterial.title, definition: activeMaterial.summary || "The fundamental conceptual core and governing principles." },
+          { term: "Dynamic Equilibrium", definition: "A state in which opposing processes occur at equal rates, maintaining balanced concentrations." },
+          { term: "Regulatory Feedback", definition: "A process in which system outputs modify or constrain forward operational velocity." },
           { term: "Limiting Factor", definition: "The essential variable or resource with lowest availability capping total yield." },
+          { term: "Conservation Law", definition: "The principle that mass, energy, and fundamental physical quantities remain constant." },
         ];
+
+    const baseCards = [...cleanBaseCards];
 
     while (baseCards.length < 15) {
       const idx = baseCards.length;
-      const def = defs[idx % defs.length];
+      const def = safeDefs[idx % safeDefs.length];
       const front = `In ${activeMaterial.title}, what is the specific role and operational definition of "${def.term}"?`;
       const back = def.definition;
       const explanation = `Detailed Explanation of Question:\n"${front}"\n\nThis question evaluates your foundational understanding of ${def.term}. Specifically, ${def.definition.toLowerCase()} In ${activeMaterial.title}, this mechanism establishes stability and prevents systemic errors. Understanding this causal relationship allows you to answer both multiple choice and free response exam questions accurately.`;
@@ -83,27 +106,43 @@ export const MemoriseView: React.FC = () => {
         mastered: false,
       });
     }
-    return baseCards;
+    return baseCards.slice(0, 20);
   }, [currentPack, activeMaterial]);
 
-  // Ensure exactly 15 objective fill-in-the-blanks with options
+  // Ensure exactly 15 objective fill-in-the-blanks with options strictly from this material
   const fullBlanks: FillInTheBlank[] = useMemo(() => {
-    if (!currentPack || !activeMaterial) return [];
-    const baseBlanks = [...currentPack.fillInTheBlanks];
-    const defs = activeMaterial.definitions && activeMaterial.definitions.length > 0
-      ? activeMaterial.definitions
+    if (!activeMaterial) return [];
+    const cleanBaseBlanks = (currentPack?.fillInTheBlanks || []).filter((b) => {
+      const txt = (b.sentence + " " + b.answer + " " + (b.explanation || "")).toLowerCase();
+      return (
+        !txt.includes("uploaded study file") &&
+        !txt.includes("uploaded file") &&
+        !txt.includes("what is the file")
+      );
+    });
+
+    const defs = (activeMaterial.definitions || []).filter(
+      (d) =>
+        d.term &&
+        d.definition &&
+        !/uploaded study file/i.test(d.term) &&
+        !/uploaded study file/i.test(d.definition)
+    );
+
+    const safeDefs = defs.length > 0
+      ? defs
       : [
           { term: activeMaterial.title, definition: activeMaterial.summary || "Core concept." },
-          { term: "Steady State", definition: "Continuous flux maintaining unvarying state variables." },
+          { term: "Dynamic Equilibrium", definition: "Continuous flux maintaining unvarying state variables." },
           { term: "Feedback Loop", definition: "Mechanism controlling output rates based on sensor signals." },
           { term: "Activation Energy", definition: "Minimum kinetic energy required for conversion." },
           { term: "Limiting Factor", definition: "Constraint determining maximum throughput." },
         ];
 
     // Guarantee options on all blanks
-    const enhanced = baseBlanks.map((b, idx) => {
+    const enhanced = cleanBaseBlanks.map((b) => {
       if (b.options && b.options.length >= 4) return b;
-      const otherTerms = defs.map((d) => d.term).filter((t) => t !== b.answer);
+      const otherTerms = safeDefs.map((d) => d.term).filter((t) => t !== b.answer);
       const options = [
         b.answer,
         otherTerms[0] || "Inert Equilibrium",
@@ -119,8 +158,8 @@ export const MemoriseView: React.FC = () => {
 
     while (enhanced.length < 15) {
       const idx = enhanced.length;
-      const def = defs[idx % defs.length];
-      const otherTerms = defs.map((d) => d.term).filter((t) => t !== def.term);
+      const def = safeDefs[idx % safeDefs.length];
+      const otherTerms = safeDefs.map((d) => d.term).filter((t) => t !== def.term);
       const options = [
         def.term,
         otherTerms[0] || "Static Friction",
@@ -137,7 +176,7 @@ export const MemoriseView: React.FC = () => {
       });
     }
 
-    return enhanced;
+    return enhanced.slice(0, 20);
   }, [currentPack, activeMaterial]);
 
   // Ensure at least 10 mnemonics

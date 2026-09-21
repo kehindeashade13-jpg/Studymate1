@@ -640,112 +640,66 @@ export const DashboardView: React.FC = () => {
                     key={`recent-${mat.id}`}
                     className="p-3.5 sm:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:shadow-md transition-all space-y-3 text-[#0A1931] group"
                   >
-                    {/* Top row: Thumbnail / Icon + Title & Meta Info */}
-                    <div className="flex items-start gap-3">
-                      {/* Media Preview Box */}
-                      {mat.fileUrl ? (
-                        <div
-                          onClick={() => setPreviewingMaterial(mat)}
-                          className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shrink-0 cursor-pointer group/thumb shadow-2xs"
-                          title="Click to preview file/photo"
-                        >
-                          <img
-                            src={mat.fileUrl}
-                            alt={mat.title}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-200"
-                          />
-                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center text-white">
-                            <Maximize2 className="w-4 h-4" />
-                          </div>
-                          <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-[9px] font-bold">
-                            Photo
+                    {/* Top row: Subject & Source Badges + Title & Meta Info */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Subject / Course Code Badge */}
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${meta.color}`}
+                          >
+                            <span>{meta.emoji}</span>
+                            <span>{mat.courseCode || mat.subject}</span>
+                          </span>
+
+                          {/* Source Format Badge */}
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${sourceMeta.color}`}
+                          >
+                            <SourceIcon className="w-3 h-3" />
+                            <span>{sourceMeta.label}</span>
                           </span>
                         </div>
-                      ) : (
-                        <div
-                          onClick={() => setPreviewingMaterial(mat)}
-                          className={`w-14 h-14 sm:w-16 sm:h-16 rounded-xl border flex flex-col items-center justify-center shrink-0 shadow-2xs cursor-pointer transition ${
-                            isPhoto
-                              ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100"
-                              : mat.sourceType === "upload" || mat.sourceType === "deck"
-                              ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
-                              : mat.sourceType === "youtube"
-                              ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
-                              : mat.sourceType === "record"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                              : "bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100"
-                          }`}
-                          title="Click to view details"
-                        >
-                          <SourceIcon className="w-6 h-6" />
-                          <span className="text-[9px] font-bold uppercase mt-0.5 tracking-tight">
-                            {mat.sourceType === "upload" ? "FILE" : mat.sourceType === "photo" ? "PHOTO" : mat.sourceType}
-                          </span>
+
+                        {/* Relative timestamp */}
+                        <div className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0 font-medium">
+                          <Clock className="w-3 h-3" />
+                          <span>{timeAgo}</span>
                         </div>
-                      )}
+                      </div>
 
-                      {/* Info & Meta Details */}
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {/* Subject / Course Code Badge */}
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${meta.color}`}
-                            >
-                              <span>{meta.emoji}</span>
-                              <span>{mat.courseCode || mat.subject}</span>
-                            </span>
+                      {/* Title */}
+                      <h3
+                        onClick={() => handleOpenMaterialMode(mat, "learn")}
+                        className="font-extrabold text-sm sm:text-base text-[#0A1931] hover:text-[#6366F1] transition cursor-pointer leading-snug line-clamp-1 pt-0.5"
+                      >
+                        <CleanFormattedText as="span" content={mat.title} />
+                      </h3>
 
-                            {/* Source Format Badge */}
-                            <span
-                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${sourceMeta.color}`}
-                            >
-                              <SourceIcon className="w-3 h-3" />
-                              <span>{sourceMeta.label}</span>
-                            </span>
-                          </div>
+                      {/* Excerpt / Summary */}
+                      <div className="text-xs text-[#1B2A4A]/70 line-clamp-2 leading-relaxed">
+                        <CleanFormattedText
+                          content={mat.summary || (mat.rawText ? mat.rawText.slice(0, 160) : "Uploaded study material ready for active recall practice.")}
+                        />
+                      </div>
 
-                          {/* Relative timestamp */}
-                          <div className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0 font-medium">
-                            <Clock className="w-3 h-3" />
-                            <span>{timeAgo}</span>
-                          </div>
-                        </div>
-
-                        {/* Title */}
-                        <h3
-                          onClick={() => handleOpenMaterialMode(mat, "learn")}
-                          className="font-extrabold text-sm sm:text-base text-[#0A1931] hover:text-[#6366F1] transition cursor-pointer leading-snug line-clamp-1"
-                        >
-                          <CleanFormattedText as="span" content={mat.title} />
-                        </h3>
-
-                        {/* Excerpt / Summary */}
-                        <div className="text-xs text-[#1B2A4A]/70 line-clamp-1 leading-relaxed">
-                          <CleanFormattedText
-                            content={mat.summary || (mat.rawText ? mat.rawText.slice(0, 140) : "Uploaded study material ready for active recall practice.")}
-                          />
-                        </div>
-
-                        {/* Metrics Pills */}
-                        <div className="flex items-center gap-2 pt-0.5 text-[11px] font-semibold text-slate-500 flex-wrap">
-                          <span className="flex items-center gap-1 text-[#0A1931]">
-                            <Brain className="w-3 h-3 text-[#6366F1]" />
-                            <span>{mat.definitions?.length || 10} flashcards</span>
-                          </span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1 text-[#0A1931]">
-                            <HelpCircle className="w-3 h-3 text-emerald-600" />
-                            <span>{mat.potentialExamQuestions?.length || 5} questions</span>
-                          </span>
-                          {mat.chunks && mat.chunks.length > 0 && (
-                            <>
-                              <span>•</span>
-                              <span>{mat.chunks.length} sections</span>
-                            </>
-                          )}
-                        </div>
+                      {/* Metrics Pills */}
+                      <div className="flex items-center gap-2 pt-0.5 text-[11px] font-semibold text-slate-500 flex-wrap">
+                        <span className="flex items-center gap-1 text-[#0A1931]">
+                          <Brain className="w-3 h-3 text-[#6366F1]" />
+                          <span>{mat.definitions?.length || 10} flashcards</span>
+                        </span>
+                        <span>•</span>
+                        <span className="flex items-center gap-1 text-[#0A1931]">
+                          <HelpCircle className="w-3 h-3 text-emerald-600" />
+                          <span>{mat.potentialExamQuestions?.length || 5} questions</span>
+                        </span>
+                        {mat.chunks && mat.chunks.length > 0 && (
+                          <>
+                            <span>•</span>
+                            <span>{mat.chunks.length} sections</span>
+                          </>
+                        )}
                       </div>
                     </div>
 

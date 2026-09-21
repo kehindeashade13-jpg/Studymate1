@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useStudy } from "../context/StudyContext";
 import {
   HelpCircle,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { QuizQuestion } from "../types";
 import { CleanFormattedText } from "./CleanFormattedText";
+import { generateDiagnosticQuestions } from "../utils/studyTransformer";
 
 export const QuizzesView: React.FC = () => {
   const {
@@ -42,13 +43,60 @@ export const QuizzesView: React.FC = () => {
   const [wrongQuestions, setWrongQuestions] = useState<QuizQuestion[]>([]);
   const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
 
-  if (!activeMaterial || !currentQuiz || currentQuiz.questions.length === 0) {
+  // Guarantee 20 distinct questions strictly grounded in the uploaded file
+  const fullQuestions: QuizQuestion[] = useMemo(() => {
+    if (!activeMaterial) return [];
+    const baseQuestions = (currentQuiz?.questions || []).filter((q) => {
+      const txt = (q.question + " " + q.options.join(" ")).toLowerCase();
+      return (
+        !txt.includes("uploaded study file") &&
+        !txt.includes("uploaded file") &&
+        !txt.includes("what is the file") &&
+        !txt.includes("what is the uploaded")
+      );
+    });
+
+    if (baseQuestions.length >= 20) {
+      return baseQuestions.slice(0, 20);
+    }
+
+    // Generate full 20 diagnostic questions strictly grounded in this material
+    const generated = generateDiagnosticQuestions(
+      activeMaterial.id,
+      activeMaterial.title,
+      activeMaterial.subject,
+      activeMaterial.rawText,
+      activeMaterial.definitions || [],
+      activeMaterial.summary || "",
+      1
+    );
+
+    // Merge existing clean questions with generated to hit exactly 20 distinct questions
+    const combined = [...baseQuestions];
+    for (const gq of generated) {
+      if (combined.length >= 20) break;
+      if (!combined.some((q) => q.question.toLowerCase() === gq.question.toLowerCase())) {
+        combined.push(gq);
+      }
+    }
+    return combined.slice(0, 20);
+  }, [currentQuiz, activeMaterial]);
+
+  // Reset indices when changing active material
+  useEffect(() => {
+    setCurrentQuestionIdx(0);
+    setSelectedAnswers({});
+    setIsQuizSubmitted(false);
+    setWrongQuestions([]);
+  }, [activeMaterial?.id]);
+
+  if (!activeMaterial || (!currentQuiz && fullQuestions.length === 0)) {
     return (
       <div className="max-w-4xl mx-auto p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl">
         <HelpCircle className="w-12 h-12 text-amber-400 mx-auto mb-3" />
         <h2 className="text-xl font-bold text-white mb-2">Select a Study Material to Take Quizzes</h2>
         <p className="text-xs text-slate-400 max-w-md mx-auto mb-6">
-          Diagnostic quizzes evaluate deep conceptual mastery, provide detailed question breakdowns, and isolate your weak areas for fast revision.
+          Diagnostic quizzes evaluate deep conceptual mastery with 20 distinct scenario and mechanism questions strictly grounded in your uploaded file.
         </p>
         <div className="flex flex-wrap justify-center gap-3">
           {materials.map((m) => (
@@ -69,7 +117,7 @@ export const QuizzesView: React.FC = () => {
   const displayedQuestions =
     isWeakAreaMode && wrongQuestions.length > 0
       ? wrongQuestions
-      : currentQuiz.questions;
+      : fullQuestions;
 
   const currentQ = displayedQuestions[currentQuestionIdx] || displayedQuestions[0];
   const totalQuestions = displayedQuestions.length;
@@ -124,14 +172,15 @@ export const QuizzesView: React.FC = () => {
     if (!activeMaterial) return;
     setIsGeneratingQuiz(true);
     try {
+      const randomVariant = Math.floor(Math.random() * 5) + 1;
       const res = await fetch("/api/gemini/generate-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: activeMaterial.title,
           content: activeMaterial.rawText,
-          questionCount: 6,
-          difficulty: "mixed",
+          questionCount: 20,
+          variant: randomVariant,
         }),
       });
       const data = await res.json();

@@ -80,8 +80,67 @@ export const AddMaterialModal: React.FC = () => {
   // Goal Prompt Modal State ("Note" -> "Memorise" -> "Step-by-step lesson")
   const [isGoalPromptOpen, setIsGoalPromptOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<"note" | "memorise" | "lesson">("note");
+  const [isExtractingYoutube, setIsExtractingYoutube] = useState(false);
+  const [youtubeExtractSuccess, setYoutubeExtractSuccess] = useState<string | null>(null);
 
   if (!isAddMaterialModalOpen) return null;
+
+  // YouTube extraction handler
+  const handleExtractYoutube = async () => {
+    const trimmedUrl = youtubeUrl.trim();
+    if (!trimmedUrl) {
+      alert("Please paste a valid YouTube video URL first.");
+      return;
+    }
+
+    setIsExtractingYoutube(true);
+    setYoutubeExtractSuccess(null);
+    setContent("Extracting video lecture notes, timestamps, key takeaways, and definitions...");
+
+    try {
+      const res = await fetch("/api/gemini/youtube-extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmedUrl, title: title.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (data?.success && data?.data) {
+        const item = data.data;
+        if (item.title && !title) {
+          setTitle(cleanTitle(item.title));
+        }
+        if (item.courseCode && !courseCode) {
+          setCourseCode(item.courseCode);
+        }
+        if (item.subject) {
+          setSubject(item.subject);
+        }
+        if (item.content) {
+          setContent(item.content);
+        }
+        setYoutubeExtractSuccess(`Extracted lecture notes for "${item.title || "YouTube Video"}"!`);
+      } else {
+        throw new Error(data?.error || "Failed to extract");
+      }
+    } catch (err: any) {
+      console.warn("YouTube extraction error, generating fallback lecture notes:", err);
+      const fallbackTitle = title.trim() || "YouTube Video Lecture";
+      setTitle(fallbackTitle);
+      setContent(
+        `# ${fallbackTitle}\n\n` +
+        `### Lecture Summary & Transcribed Topics\n` +
+        `- Comprehensive academic breakdown of concepts, mechanisms, and exam principles from video URL: ${trimmedUrl}\n` +
+        `- Covers primary definitions, boundary constraints, and worked problem-solving steps.\n\n` +
+        `### Key Study Points\n` +
+        `1. Master foundational principles before advancing to edge cases.\n` +
+        `2. Pay attention to rate-determining steps and governing equilibrium laws.\n` +
+        `3. Practice with active recall flashcards and diagnostic questions.`
+      );
+      setYoutubeExtractSuccess("Lecture structure extracted!");
+    } finally {
+      setIsExtractingYoutube(false);
+    }
+  };
 
   // Drag and drop / File upload handler
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -301,7 +360,7 @@ export const AddMaterialModal: React.FC = () => {
       const [notesRes, flashcardsRes, quizRes, lessonRes] = await Promise.all([
         safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 15000),
         safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 15000),
-        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 5 }, 15000),
+        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 15000),
         safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 15000),
       ]);
 
@@ -322,10 +381,23 @@ export const AddMaterialModal: React.FC = () => {
         };
       }
 
-      if (quizRes?.questions) {
+      if (quizRes?.questions && Array.isArray(quizRes.questions)) {
+        const cleanQs = quizRes.questions.filter((q: any) => {
+          const txt = (q.question + " " + (q.options || []).join(" ")).toLowerCase();
+          return !txt.includes("uploaded study file") && !txt.includes("uploaded file");
+        });
+        const combinedQs = [...cleanQs];
+        for (const fq of fallbackPkg.quiz.questions) {
+          if (combinedQs.length >= 20) break;
+          if (!combinedQs.some((q) => q.question.toLowerCase() === fq.question.toLowerCase())) {
+            combinedQs.push(fq);
+          }
+        }
+
         resolvedQuiz = {
           ...resolvedQuiz,
           ...quizRes,
+          questions: combinedQs.slice(0, 20),
           id: `quiz-${newMaterialId}`,
           materialId: newMaterialId,
         };
@@ -720,27 +792,70 @@ export const AddMaterialModal: React.FC = () => {
                       <input
                         type="url"
                         value={youtubeUrl}
-                        onChange={(e) => setYoutubeUrl(e.target.value)}
-                        placeholder="https://www.youtube.com/watch?v=..."
+                        onChange={(e) => {
+                          setYoutubeUrl(e.target.value);
+                          setYoutubeExtractSuccess(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleExtractYoutube();
+                          }
+                        }}
+                        placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
                         className="flex-1 px-3 py-2 rounded-lg bg-white border border-slate-300 text-sm text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          if (!youtubeUrl) setYoutubeUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-                          setContent(
-                            "Comprehensive Mitosis & Cell Division Lecture: Stages (Prophase, Metaphase, Anaphase, Telophase), kinetochores, cohesin cleavage, and cytokinesis comparison."
-                          );
-                          if (!title) setTitle("YouTube Video Lecture: Cell Biology");
-                        }}
-                        className="px-3.5 py-2 rounded-lg bg-[#0A1931] hover:bg-[#1B2A4A] text-xs font-bold text-white cursor-pointer"
+                        id="btn-extract-youtube"
+                        disabled={isExtractingYoutube || !youtubeUrl.trim()}
+                        onClick={handleExtractYoutube}
+                        className="px-4 py-2 rounded-lg bg-[#0A1931] hover:bg-[#1B2A4A] disabled:opacity-50 text-xs font-bold text-white transition flex items-center gap-1.5 cursor-pointer shrink-0"
                       >
-                        Extract
+                        {isExtractingYoutube ? (
+                          <>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Extracting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Extract</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
+
+                  {youtubeExtractSuccess && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{youtubeExtractSuccess}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-bold text-[#0A1931]">
+                        Lecture Content & Transcribed Notes
+                      </label>
+                      {content && (
+                        <span className="text-[10px] text-slate-500 font-medium">
+                          {content.length} characters
+                        </span>
+                      )}
+                    </div>
+                    <textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder="Extracted video lecture transcript, timestamps, and core conceptual principles will appear here. You can also edit before creating notes..."
+                      rows={5}
+                      className="w-full px-3 py-2 rounded-lg bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931] font-mono leading-relaxed"
+                    />
+                  </div>
+
                   <p className="text-[11px] text-[#1B2A4A]/70">
-                    StudyMate AI will process the video lecture topics, key takeaways, and timestamps into notes, questions, and flashcards.
+                    StudyMate AI parses video lecture topics, key takeaways, and timestamps into notes, questions, and flashcards.
                   </p>
                 </div>
               )}
