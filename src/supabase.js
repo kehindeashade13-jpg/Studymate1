@@ -1,22 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Helper to safely read environment variables across Vite client & Node.js
-const getEnvVar = (name, viteName) => {
-  try {
-    if (typeof import.meta !== "undefined" && import.meta.env && import.meta.env[viteName]) {
-      return import.meta.env[viteName];
-    }
-  } catch {}
-  try {
-    if (typeof process !== "undefined" && process.env) {
-      return process.env[viteName] || process.env[name] || "";
-    }
-  } catch {}
-  return "";
-};
+// Safe Vite Environment Variable access
+export const SUPABASE_URL =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+  "";
 
-export const SUPABASE_URL = getEnvVar("SUPABASE_URL", "VITE_SUPABASE_URL");
-export const SUPABASE_ANON_KEY = getEnvVar("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
+export const SUPABASE_ANON_KEY =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+  "";
 
 export const isSupabaseConfigured = () => {
   return Boolean(
@@ -45,7 +36,8 @@ const BUCKET_NAME = "study-materials";
 
 /**
  * Uploads an uploaded study file to Supabase Storage bucket 'study-materials'.
- * If Supabase is not configured or fails, falls back gracefully to a browser data/blob URL.
+ * If Supabase is not configured, provides a client-side URL.
+ * If Supabase is configured and the upload fails, returns success: false with the error message.
  */
 export async function uploadStudyMaterialFile(
   file,
@@ -60,7 +52,7 @@ export async function uploadStudyMaterialFile(
 
   if (!isSupabaseConfigured()) {
     console.info(
-      "[Supabase] Supabase credentials not yet provided in .env. Using client-side URL fallback."
+      "[Supabase] Supabase credentials not configured in VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY. Using local URL."
     );
     let fallbackUrl = "";
     if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
@@ -77,7 +69,7 @@ export async function uploadStudyMaterialFile(
   }
 
   try {
-    // 1. Upload to Supabase Storage
+    // 1. Upload to Supabase Storage bucket
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from(bucket)
       .upload(filePath, file, {
@@ -87,18 +79,13 @@ export async function uploadStudyMaterialFile(
       });
 
     if (uploadError) {
-      console.warn("[Supabase Storage] Upload error:", uploadError.message);
-      // If bucket doesn't exist or permissions error, provide safe fallback url
-      let fallbackUrl = "";
-      if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
-        fallbackUrl = URL.createObjectURL(file);
-      }
+      console.error("[Supabase Storage] Upload error to bucket", bucket, ":", uploadError.message);
       return {
-        publicUrl: fallbackUrl || filePath,
+        publicUrl: null,
         path: filePath,
-        success: true,
-        isLocalFallback: true,
-        error: uploadError.message,
+        success: false,
+        isLocalFallback: false,
+        error: uploadError.message || `Failed to upload to ${bucket} bucket`,
       };
     }
 
@@ -113,17 +100,13 @@ export async function uploadStudyMaterialFile(
       isLocalFallback: false,
     };
   } catch (err) {
-    console.warn("[Supabase Storage] Exception during upload:", err);
-    let fallbackUrl = "";
-    if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
-      fallbackUrl = URL.createObjectURL(file);
-    }
+    console.error("[Supabase Storage] Exception during upload:", err);
     return {
-      publicUrl: fallbackUrl || filePath,
+      publicUrl: null,
       path: filePath,
-      success: true,
-      isLocalFallback: true,
-      error: err?.message,
+      success: false,
+      isLocalFallback: false,
+      error: err?.message || "Storage upload exception",
     };
   }
 }

@@ -18,6 +18,7 @@ import {
   Brain,
   GraduationCap,
   ArrowRight,
+  AlertTriangle,
 } from "lucide-react";
 import { useStudy, ActiveTab } from "../context/StudyContext";
 import { StudySubject, SourceType, StudyMaterial } from "../types";
@@ -30,6 +31,13 @@ import {
   extractCourseCode,
   detectSubjectFromCodeOrTitle,
 } from "../utils/studyTransformer";
+import {
+  uploadStudyMaterialFile,
+  saveMaterialToDatabase,
+  saveNotesToDatabase,
+  saveFlashcardsToDatabase,
+  isSupabaseConfigured,
+} from "../supabase";
 
 export const AddMaterialModal: React.FC = () => {
   const {
@@ -54,6 +62,8 @@ export const AddMaterialModal: React.FC = () => {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileUrl, setUploadedFileUrl] = useState<string | null>(null);
+  const [selectedFileObj, setSelectedFileObj] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [isExtractingDoc, setIsExtractingDoc] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -67,6 +77,8 @@ export const AddMaterialModal: React.FC = () => {
     setSubject("Other");
     setUploadedFileName(null);
     setUploadedFileUrl(null);
+    setSelectedFileObj(null);
+    setUploadError(null);
     setImagePreview(null);
     setIsExtractingDoc(false);
     setIsProcessing(false);
@@ -168,6 +180,9 @@ export const AddMaterialModal: React.FC = () => {
   // Unified File Processing with Strict Request-Id Isolation
   const processSelectedFile = (file: File) => {
     if (!file) return;
+
+    setSelectedFileObj(file);
+    setUploadError(null);
 
     // Generate unique isolation ID for this specific upload action
     const uploadId = `up-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -361,6 +376,7 @@ export const AddMaterialModal: React.FC = () => {
       rawContent = `${finalTitle} comprehensive lecture and study notes covering definitions, mechanisms, and exam questions.`;
     }
 
+    setUploadError(null);
     setIsProcessing(true);
     setProcessingStage(0);
 
@@ -382,7 +398,40 @@ export const AddMaterialModal: React.FC = () => {
       ? detectSubjectFromCodeOrTitle(finalCourseCode, rawContent)
       : (subject || detectSubjectFromCodeOrTitle(finalTitle, rawContent));
 
-    // Guaranteed fallback package ready instantly
+    // 1. Storage Upload: Await Supabase storage upload to 'study-materials' bucket if a file was selected
+    let finalFileUrl: string | undefined = uploadedFileUrl || imagePreview || undefined;
+    let finalStoragePath: string | undefined = undefined;
+
+    if (selectedFileObj) {
+      setProcessingStage(1);
+      console.log(`[Supabase Storage] Uploading "${selectedFileObj.name}" to bucket "study-materials"...`);
+      const storageResult = await uploadStudyMaterialFile(
+        selectedFileObj,
+        uploadedFileName || selectedFileObj.name,
+        "study-materials"
+      );
+
+      // BLOCK PAGE NAVIGATION IF UPLOAD FAILS
+      if (!storageResult.success) {
+        const errorMsg =
+          storageResult.error ||
+          "Failed to upload file to Supabase storage bucket 'study-materials'. Please check bucket permissions and connection.";
+        console.error("[Upload Handler Error - Navigation Blocked]", errorMsg);
+        setUploadError(errorMsg);
+        setIsProcessing(false);
+        clearInterval(stageInterval);
+        return; // BLOCK PAGE NAVIGATION AND EXIT SUBMIT HANDLER
+      }
+
+      if (storageResult.publicUrl) {
+        finalFileUrl = storageResult.publicUrl;
+      }
+      if (storageResult.path) {
+        finalStoragePath = storageResult.path;
+      }
+    }
+
+    // Dynamic study package ready
     const fallbackPkg = generateFallbackStudyPackage(
       newMaterialId,
       finalTitle,
@@ -390,7 +439,7 @@ export const AddMaterialModal: React.FC = () => {
       finalSubject,
       activeImportType,
       youtubeUrl || undefined,
-      uploadedFileUrl || imagePreview || undefined,
+      finalFileUrl,
       finalCourseCode
     );
 
@@ -399,7 +448,8 @@ export const AddMaterialModal: React.FC = () => {
       id: newMaterialId,
       courseCode: finalCourseCode,
       subject: finalSubject,
-      fileUrl: uploadedFileUrl || imagePreview || undefined,
+      fileUrl: finalFileUrl,
+      storagePath: finalStoragePath,
     };
     let resolvedNotes = fallbackPkg.notes;
     let resolvedFlashcards = fallbackPkg.flashcards;
@@ -407,7 +457,7 @@ export const AddMaterialModal: React.FC = () => {
     let resolvedLesson = fallbackPkg.lesson;
 
     try {
-      // 1. Fetch material analysis with a 9s safety timeout
+      // 2. Fetch material analysis with a safety timeout
       const rawAnalyzeData = await safeFetchJson<any>(
         "/api/gemini/analyze",
         {
@@ -437,7 +487,7 @@ export const AddMaterialModal: React.FC = () => {
         };
       }
 
-      // 2. Fetch specialized study assets in two staggered pairs to prevent rate-limit concurrency spikes
+      // 3. Fetch specialized study assets in two staggered pairs to prevent rate-limit concurrency spikes
       const [rawNotesRes, rawFlashcardsRes] = await Promise.all([
         safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 25000),
         safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 25000),
@@ -513,7 +563,27 @@ export const AddMaterialModal: React.FC = () => {
     } catch (err) {
       console.warn("Using local study transformation fallback:", err);
     } finally {
-      // Guaranteed save under all conditions (inside AI Studio, live links, and offline)
+      // 4. Database Insertion: Await inserting records into study_materials, generated_notes, flashcards BEFORE navigating
+      console.log(`[Supabase DB] Awaiting persistence for material "${finalTitle}"...`);
+      try {
+        const [dbMatRes, dbNotesRes, dbFlashRes] = await Promise.all([
+          saveMaterialToDatabase(resolvedMaterial),
+          saveNotesToDatabase(newMaterialId, resolvedNotes),
+          saveFlashcardsToDatabase(newMaterialId, resolvedFlashcards.flashcards),
+        ]);
+
+        if (isSupabaseConfigured()) {
+          if (dbMatRes && !dbMatRes.success && dbMatRes.error) {
+            console.warn("[Supabase DB Notice] Material table insertion error:", dbMatRes.error);
+          }
+          if (dbNotesRes && !dbNotesRes.success && dbNotesRes.error) {
+            console.warn("[Supabase DB Notice] Notes table insertion error:", dbNotesRes.error);
+          }
+        }
+      } catch (dbErr: any) {
+        console.warn("[Supabase DB] Exception during database insertion:", dbErr);
+      }
+
       console.log(`[ACTIVE MATERIAL]`, {
         fileId: newMaterialId,
         title: finalTitle,
@@ -526,6 +596,7 @@ export const AddMaterialModal: React.FC = () => {
         timestamp: new Date().toISOString(),
       });
 
+      // Update context state
       addMaterial(resolvedMaterial);
       saveGeneratedNotes(newMaterialId, resolvedNotes);
       saveGeneratedMemorise(newMaterialId, resolvedFlashcards);
@@ -702,6 +773,17 @@ export const AddMaterialModal: React.FC = () => {
           </div>
 
           <div className="p-6 max-h-[75vh] overflow-y-auto space-y-6">
+            {/* Upload Error Banner if Supabase storage upload fails */}
+            {uploadError && (
+              <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3 text-red-800 animate-in fade-in-50">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-red-900">Upload Failed — Navigation Blocked</h4>
+                  <p className="text-xs text-red-700 leading-relaxed">{uploadError}</p>
+                </div>
+              </div>
+            )}
+
             {/* Title & Course Code inputs */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2">
@@ -721,7 +803,7 @@ export const AddMaterialModal: React.FC = () => {
                       }
                     }
                   }}
-                  placeholder="e.g., Chemical Principles & Organic Reactions"
+                  placeholder="e.g., GST 102 Communication in English"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
                 />
               </div>
@@ -747,7 +829,7 @@ export const AddMaterialModal: React.FC = () => {
                       setSubject(detectSubjectFromCodeOrTitle(val));
                     }
                   }}
-                  placeholder="e.g., CHM 203, BIO 101"
+                  placeholder="e.g., GST 102, BIO 101"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-bold text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] uppercase transition"
                 />
               </div>

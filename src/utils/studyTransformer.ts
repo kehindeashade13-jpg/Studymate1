@@ -435,118 +435,59 @@ export function extractTextFeatures(rawText: string, title: string) {
     }
   }
 
-  const detectedSubject = detectSubjectFromTitle(title);
-
-  // Subject-specific rich definitions bank
-  const chemistryBank = [
+  // Universal academic concepts bank grounded to document domain
+  const academicDomainBank = [
     {
-      term: "Chemical Kinetics",
-      definition: "The branch of chemistry focused on reaction rates, mechanisms of transformation, and collision dynamics.",
+      term: `${title} Core Principle`,
+      definition: `The fundamental rule, conceptual axiom, or theoretical framework governing ${title}.`,
     },
     {
-      term: "Activation Energy (Ea)",
-      definition: "The minimum kinetic energy colliding reactant molecules must possess to overcome the energetic barrier and form products.",
+      term: "Key Nomenclature & Concepts",
+      definition: "The standardized terminology, operational definitions, and essential taxonomy required for clear academic communication.",
     },
     {
-      term: "Dynamic Chemical Equilibrium",
-      definition: "A state in a reversible reaction where forward and reverse transformation rates are equal, maintaining constant concentrations.",
+      term: "Analytical Methodology",
+      definition: "The systematic framework and criteria used to examine claims, evaluate data, and formulate structured conclusions.",
     },
     {
-      term: "Le Chatelier's Principle",
-      definition: "When a system at equilibrium is disturbed by changes in temperature, pressure, or concentration, it shifts to counteract the disturbance.",
+      term: "Systemic Interaction",
+      definition: "How interacting variables, arguments, or structural components influence one another within the system.",
     },
     {
-      term: "Catalysis & Rate Acceleration",
-      definition: "The increase in reaction velocity achieved by providing an alternative pathway with lower activation energy without consuming the catalyst.",
+      term: "Primary Governing Constraint",
+      definition: "The critical boundary condition, rule, or limiting threshold that dictates operational validity or scope.",
     },
     {
-      term: "Arrhenius Rate Equation",
-      definition: "The mathematical law k = A * exp(-Ea / RT) quantifying how rate constants depend exponentially on temperature and activation energy.",
+      term: "Empirical Evidence & Validation",
+      definition: "The observational data, textual proofs, or experimental benchmarks used to verify hypotheses and theoretical claims.",
     },
     {
-      term: "Gibbs Free Energy (ΔG)",
-      definition: "The thermodynamic potential measuring maximum reversible work obtainable; negative values indicate spontaneous forward progression.",
+      term: "Feedback & Regulation",
+      definition: "A dynamic control mechanism where output adjustments alter future input behavior to maintain system stability.",
     },
     {
-      term: "Enthalpy & Thermodynamic Balance",
-      definition: "The total heat content of a chemical system, where exothermic reactions release heat (negative ΔH) and endothermic absorb heat.",
+      term: "Equilibrium & Steady State",
+      definition: "A condition where opposing forces or continuous processes maintain balanced, predictable internal conditions.",
     },
     {
-      term: "Reaction Order & Rate Law",
-      definition: "An empirical mathematical expression showing how the rate of reaction depends upon the concentrations of specific reactants.",
+      term: "Contextual Application",
+      definition: "The practical implementation of abstract rules and concepts to real-world scenarios and examination questions.",
     },
     {
-      term: "Acid-Base Buffer System",
-      definition: "An aqueous solution consisting of a weak acid and its conjugate base that resists significant changes in pH upon addition of small amounts of acid or base.",
+      term: "Critical Synthesis",
+      definition: "Integrating isolated facts, definitions, and mechanisms into a unified, high-level understanding.",
     },
     {
-      term: "Collision Frequency & Geometry",
-      definition: "The requirement that reactant particles must collide with both sufficient kinetic velocity and appropriate spatial orientation.",
+      term: "Diagnostic Evaluation",
+      definition: "The methodical identification of underlying causes, structural relationships, or error patterns in complex systems.",
     },
     {
-      term: "Equilibrium Constant (Kc)",
-      definition: "The temperature-dependent ratio of equilibrium product concentrations to reactant concentrations raised to stoichiometric coefficients.",
-    },
-    {
-      term: "Spectroscopic Characterization",
-      definition: "The identification of molecular structure and bond vibrations through interaction with electromagnetic radiation.",
-    },
-    {
-      term: "Colligative Properties",
-      definition: "Solutions properties (such as vapor pressure lowering, freezing point depression) that depend purely on solute particle count.",
-    },
-    {
-      term: "Phase Boundary Equilibrium",
-      definition: "The conditions of temperature and pressure where distinct states of matter (solid, liquid, gas) coexist in steady thermodynamic stability.",
+      term: "Comparative Analysis",
+      definition: "The systematic examination of similarities, contrasts, and dependencies across related concepts or paradigms.",
     },
   ];
 
-  const generalBank = [
-    {
-      term: "Dynamic Equilibrium",
-      definition: "A state where opposing physical, chemical, or systemic forces operate at equal rates.",
-    },
-    {
-      term: "Limiting Factor",
-      definition: "The primary boundary constraint that limits maximum velocity, throughput, or overall yield.",
-    },
-    {
-      term: "Feedback Regulation",
-      definition: "A control mechanism where output alterations adjust subsequent input activity to preserve stability.",
-    },
-    {
-      term: "Activation Threshold",
-      definition: "The minimum energetic or informational input required to initiate an operational transition.",
-    },
-    {
-      term: "Thermodynamic Entropy",
-      definition: "A measure of energy dispersal and molecular randomness within an isolated system over time.",
-    },
-    {
-      term: "Empirical Validation",
-      definition: "The verification of hypotheses through reproducible experimental measurement and observation.",
-    },
-    {
-      term: "Kinetic Throughput",
-      definition: "The volumetric rate at which constituents move through successive processing stages.",
-    },
-    {
-      term: "Boundary Constraint",
-      definition: "External parameters (such as temperature, volume, or concentration) that dictate operational validity.",
-    },
-    {
-      term: "Conservation Law",
-      definition: "The fundamental axiom stating that total mass and energy remain constant within an isolated domain.",
-    },
-    {
-      term: "Steady State",
-      definition: "A condition in an open system where internal properties remain constant despite continuous throughput.",
-    },
-  ];
-
-  const seedBank = detectedSubject === "Chemistry" ? chemistryBank : generalBank;
-
-  for (const item of seedBank) {
+  for (const item of academicDomainBank) {
     if (definitions.length < 18 && !definitions.some((d) => d.term.toLowerCase() === item.term.toLowerCase())) {
       definitions.push(item);
     }
@@ -554,16 +495,16 @@ export function extractTextFeatures(rawText: string, title: string) {
 
   // Baseline sentences for fill-in-the-blanks
   const baselineSentences = [
-    `In any stable system studying ${title}, opposing forces continuously strive to maintain dynamic equilibrium.`,
-    `The overall velocity of the transformation is dictated by the primary limiting factor.`,
-    `Negative feedback regulation prevents runaway deviations and stabilizes internal states.`,
-    `A process cannot begin until energetic inputs satisfy the activation threshold.`,
-    `Scientific validity requires rigorous empirical validation under controlled test conditions.`,
-    `Adding an appropriate catalyst boosts kinetic throughput without altering the final equilibrium constant.`,
-    `When boundary constraints are violated, compensatory feedback loops are immediately engaged.`,
-    `Under standard operational assumptions, total energy adheres to the fundamental conservation law.`,
-    `Unlike static arrest, an open steady state requires continuous circulation of matter and energy.`,
-    `The system responds to external stress by shifting equilibrium to counteract the disturbance according to governing laws.`,
+    `In any rigorous study of ${title}, foundational principles establish the baseline rules for analysis.`,
+    `The overall velocity and accuracy of analysis is dictated by the primary governing constraint.`,
+    `Feedback and regulation mechanisms ensure internal stability across changing conditions.`,
+    `A comprehensive analysis requires empirical evidence and validation under rigorous testing criteria.`,
+    `Mastering key nomenclature and concepts enables precise diagnostic evaluation in practical problem sets.`,
+    `When boundary conditions shift, systemic interaction between variables produces dynamic adjustments.`,
+    `Achieving conceptual mastery requires critical synthesis of interrelated topics rather than rote memorization.`,
+    `Analytical methodology provides the structured protocol needed to solve complex examination questions.`,
+    `An active steady state requires continuous balance between incoming inputs and outgoing outputs.`,
+    `Comparative analysis clarifies structural differences and shared mechanisms across related subjects.`,
   ];
 
   for (const s of baselineSentences) {
@@ -1093,35 +1034,29 @@ export function generateFallbackStudyPackage(
     definitions: definitions.slice(0, 16),
     relationships: [
       {
-        itemA: "Input Energy",
-        itemB: "Activation Energy (Ea)",
-        relationship: "Input energy must exceed the activation barrier before forward transformation can proceed.",
+        itemA: definitions[0]?.term || "Foundational Rules",
+        itemB: definitions[1]?.term || "Analytical Methodology",
+        relationship: `Understanding ${definitions[0]?.term || "core principles"} is a prerequisite for executing ${definitions[1]?.term || "analytical methodologies"} in ${title}.`,
       },
       {
-        itemA: "Temperature",
-        itemB: "Reaction Velocity",
-        relationship: "Elevated temperature increases particle kinetic velocities and collision frequency.",
+        itemA: definitions[2]?.term || "Systemic Interactions",
+        itemB: definitions[3]?.term || "Contextual Application",
+        relationship: `Systemic interactions dictate how concepts are applied to complex examination scenarios and problem solving.`,
       },
     ],
     examples: [
       {
-        title: "Standard Case Study",
-        description: `Analysis of ${title} under regulated laboratory control conditions.`,
+        title: `${title} Academic Application`,
+        description: `Applying core analytical methods and principles of ${title} to structured problem-solving and diagnostic questions.`,
       },
     ],
-    formulas: [
-      {
-        name: "Steady-State Conservation",
-        formula: "∑ Inputs = ∑ Outputs + Accumulation",
-        explanation: "Fundamental conservation accounting for mass or energy across a control volume.",
-      },
-    ],
+    formulas: [],
     importantDates: [],
     potentialExamQuestions: [
       {
-        question: `Explain how ${title} responds to external perturbations according to governing equilibrium laws.`,
+        question: `Explain the fundamental principles and analytical methods governing ${title}.`,
         type: "Free Response / Short Answer",
-        keyPoint: "Discuss Le Chatelier's principle, regulatory feedback loops, and dynamic steady state restoration.",
+        keyPoint: `Discuss core definitions, systemic relationships, and diagnostic problem solving for ${title}.`,
       },
     ],
     chunks: [
@@ -1158,37 +1093,31 @@ export function generateFallbackStudyPackage(
       importantFacts.length > 0
         ? importantFacts.slice(0, 8)
         : [
-            `Understanding ${title} requires mastering both foundational definitions and system feedback loops.`,
-            "Boundary conditions determine whether the system remains in dynamic equilibrium or undergoes failure.",
+            `Understanding ${title} requires mastering both foundational definitions and conceptual relationships.`,
+            "Contextual criteria determine how rules and methods apply to specific scenarios.",
             "Synthesizing principles with active recall drills produces superior retention compared to passive reading.",
           ],
     examples: [
       {
-        scenario: "Experimental System",
-        explanation: `Empirical observations consistently confirm the predictive validity of ${title} under regulated laboratory conditions.`,
+        scenario: "Analytical Case Study",
+        explanation: `Systematic application of core concepts to evaluate scenarios and problem sets in ${title}.`,
       },
       {
-        scenario: "Real-World Application",
-        explanation: "Practical implementations rely on maintaining operational parameters safely within designated threshold limits.",
+        scenario: "Practical Implementation",
+        explanation: `Applying theoretical principles of ${title} to solve structured academic questions.`,
       },
     ],
-    formulas: [
-      {
-        name: "Equilibrium Ratio",
-        formula: "K = [Products] / [Reactants]",
-        explanation: "Indicates the directional tendency and final balance of the process.",
-      },
-    ],
+    formulas: [],
     commonMistakes: [
       {
-        mistake: "Confusing steady state with static equilibrium",
-        correction: "A steady state requires continuous flux of matter or energy to maintain constant internal conditions.",
-        whyItHappens: "Students overlook the energy throughput necessary to sustain open dynamic systems.",
+        mistake: "Confusing related terminology and definitions",
+        correction: `Ensure precise distinction between ${definitions[0]?.term || "core principles"} and ${definitions[1]?.term || "analytical methodologies"}.`,
+        whyItHappens: "Relying on surface-level keywords without understanding distinct conceptual definitions.",
       },
       {
-        mistake: "Ignoring boundary and environmental constraints",
-        correction: "Equations and postulates only hold true within defined operational temperatures, concentrations, or regimes.",
-        whyItHappens: "Relying on idealized formulas without verifying foundational assumptions.",
+        mistake: "Ignoring contextual constraints and scope",
+        correction: "Rules and analytical frameworks apply within defined contextual boundaries.",
+        whyItHappens: "Overgeneralizing specific rules to incompatible scenarios.",
       },
     ],
     quickRecap: [

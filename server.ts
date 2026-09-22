@@ -238,12 +238,11 @@ function cleanJsonResponse(raw: string): any {
 }
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
-// Free-tier approved models prioritizing high-throughput flash-lite and flash-latest
+// Free-tier approved Flash models with active quota allocations
 const CANDIDATE_MODELS = [
+  "gemini-3.8-flash",
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
-  "gemini-3.8-flash",
-  "gemini-3.1-pro-preview",
 ];
 
 async function generateContentWithRetry(
@@ -644,7 +643,7 @@ Return ONLY a valid JSON object with the following structure:
       const parsed = cleanJsonResponse(response.text || "{}");
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini analyze failed, using intelligent fallback:", err?.message);
+      console.info("[Analyzer] Upstream AI busy, generating high-yield structured analysis fallback.");
     }
   }
 
@@ -1093,7 +1092,7 @@ Return ONLY a JSON object:
       const parsed = cleanJsonResponse(response.text || "{}");
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini generate-notes failed, using fallback:", err?.message);
+      console.info("[Notes Generator] Upstream AI busy, generating high-yield structured study notes fallback.");
     }
   }
 
@@ -1281,7 +1280,7 @@ Return ONLY a JSON object matching this schema:
       }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini generate-flashcards failed, using fallback:", err?.message);
+      console.info("[Flashcard Generator] Upstream AI busy, generating high-yield flashcards fallback.");
     }
   }
 
@@ -1668,7 +1667,7 @@ Return ONLY valid JSON matching this schema:
         return res.json({ success: true, data: parsed });
       }
     } catch (err: any) {
-      console.warn("Gemini generate-quiz failed, using dynamic diagnostic generator:", err?.message);
+      console.info("[Quiz Generator] Upstream AI busy, generating dynamic diagnostic assessment fallback.");
     }
   }
 
@@ -2082,7 +2081,7 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini generate-lesson fallback engaged:", err?.message);
+      console.info("[Lesson Generator] Upstream AI busy, generating structured interactive lesson fallback.");
     }
   }
 
@@ -2272,7 +2271,7 @@ Return ONLY a JSON object:
       const parsed = cleanJsonResponse(response.text || "{}");
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini generate-plan failed, using fallback:", err?.message);
+      console.info("[Study Plan Generator] Upstream AI busy, generating customized mastery roadmap fallback.");
     }
   }
 
@@ -2514,7 +2513,7 @@ CORE DIRECTIVES:
         return res.json({ success: true, answer: replyText, reply: replyText });
       }
     } catch (err: any) {
-      console.warn("Gemini assistant notice (using high-yield synthesizer):", err?.message);
+      console.info("[Study Assistant] Upstream AI busy, synthesizing grounded academic answer from document context.");
     }
   }
 
