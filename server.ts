@@ -260,7 +260,7 @@ async function generateContentWithRetry(
   let lastError: any = null;
 
   for (const model of modelsToTry) {
-    // Try each model up to 2 times with backoff on 503 / 429
+    // Try each model with quick failover
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const callPromise = ai.models.generateContent({
@@ -269,7 +269,7 @@ async function generateContentWithRetry(
           config: params.config,
         });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 35000)
+          setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 9000)
         );
         const response = await Promise.race([callPromise, timeoutPromise]);
         return response;
@@ -282,14 +282,14 @@ async function generateContentWithRetry(
           `[Gemini API] Model ${model} (attempt ${attempt + 1}/2) encountered ${status || msg.slice(0, 100)}.`
         );
 
-        // If quota limit is 0, this model is not available on this tier; break immediately to next candidate
-        if (msg.includes("limit: 0") || msg.includes("limit:0")) {
+        // If quota limit is 0 or quota exhausted, fail over immediately to next model
+        if (msg.includes("limit: 0") || msg.includes("limit:0") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")) {
           break;
         }
 
         // If 503 high demand or temporary 429 rate limit, wait briefly before retrying or failing over
-        if (status === 503 || status === 429 || msg.includes("high demand") || msg.includes("RESOURCE_EXHAUSTED")) {
-          const delay = (attempt + 1) * 800;
+        if (status === 503 || status === 429 || msg.includes("high demand")) {
+          const delay = (attempt + 1) * 500;
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           // If not transient overload, break immediately to next model
@@ -2449,21 +2449,9 @@ CORE DIRECTIVES:
 5. ATTACHMENTS & MULTIMODAL READING:
    - If the student attaches an image, diagram, handwritten page, or document, examine every detail, extract the text, equations, or diagrams, and directly answer their question about it.`;
 
-      const contentsPayload: any[] = [];
+      let contentsPayload: any;
 
-      // 1. If user provided a direct multimodal attachment in the chat
-      if (attachment && attachment.base64) {
-        const cleanBase64 = attachment.base64.replace(/^data:[^;]+;base64,/, "");
-        const attMime = attachment.mimeType || "image/jpeg";
-        contentsPayload.push({
-          inlineData: {
-            data: cleanBase64,
-            mimeType: attMime,
-          },
-        });
-      }
-
-      // 2. Assemble context & prompt
+      // Assemble context & prompt
       let promptPayload = "";
       if (contextData) {
         promptPayload += `[STUDENT'S UPLOADED STUDY MATERIAL & NOTES]:\n${contextData}\n\n`;
@@ -2484,9 +2472,29 @@ CORE DIRECTIVES:
 
       promptPayload += `[STUDENT REQUEST (Requested Style: ${explanationStyle})]:\n${userQuery || "Please read and explain the attached document."}`;
 
-      contentsPayload.push(promptPayload);
+      // 1. If user provided a direct multimodal attachment in the chat
+      if (attachment && attachment.base64) {
+        const cleanBase64 = attachment.base64.replace(/^data:[^;]+;base64,/, "");
+        const attMime = attachment.mimeType || "image/jpeg";
+        contentsPayload = {
+          parts: [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: attMime,
+              },
+            },
+            {
+              text: promptPayload,
+            },
+          ],
+        };
+      } else {
+        contentsPayload = promptPayload;
+      }
 
-      const response = await generateContentWithRetry(ai, {
+      // Fast route-level timeout (10s) to guarantee snappy responses on mobile/cloud
+      const aiRoutePromise = generateContentWithRetry(ai, {
         contents: contentsPayload,
         config: {
           systemInstruction,
@@ -2494,21 +2502,33 @@ CORE DIRECTIVES:
         },
       });
 
-      const replyText = response.text || "";
+      const aiTimeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("AI Assistant route timeout")), 10000)
+      );
+
+      const response: any = await Promise.race([aiRoutePromise, aiTimeoutPromise]);
+
+      const replyText = response?.text || "";
       if (replyText.trim()) {
         return res.json({ success: true, answer: replyText, reply: replyText });
       }
     } catch (err: any) {
-      console.warn("Gemini assistant notice:", err?.message);
+      console.warn("Gemini assistant notice (using high-yield synthesizer):", err?.message);
     }
   }
 
   // Fallback intelligent answer connected to the uploaded file context and requested style
   let titleMention = "your uploaded study material";
-  if (contextData && contextData.includes('Active Material: "')) {
+  if (currentMaterial?.title) {
+    titleMention = `"${currentMaterial.title}"`;
+  } else if (contextData && contextData.includes('Active Material: "')) {
     const match = contextData.match(/Active Material: "([^"]+)"/);
     if (match && match[1]) titleMention = `"${match[1]}"`;
   }
+
+  const matSubject = currentMaterial?.subject || "General Coursework";
+  const matSummary = currentMaterial?.summary || "";
+  const matRaw = (currentMaterial?.content || currentMaterial?.rawText || "").slice(0, 3000);
 
   let answer = "";
   if (explanationStyle === "eli5" || userQuery.toLowerCase().includes("eli5")) {
@@ -2520,85 +2540,92 @@ Think of this concept like an everyday kitchen or traffic system:
 - **The Bottleneck (Rate-Limiting Step)**: The slowest burner on the stove — no matter how fast everything else moves, this step dictates the final speed!
 - **The Final Dish (Output)**: The stable result or end product.
 
-*In your uploaded material, remember:* Whenever you see a complex formula or mechanism, ask yourself: *"What are the ingredients, what does the cooking, and what slows it down?"*`;
+*In ${titleMention}:* Whenever tackling exam questions, ask yourself: *"What are the baseline conditions, what mechanism links them, and where do errors or bottlenecks occur?"*`;
   } else if (explanationStyle === "step_by_step") {
     answer = `### 🪜 Step-by-Step Breakdown for ${titleMention}
 
 Here is the sequential progression extracted directly from your study material:
 
-1. **Step 1: Initiation & Activation Threshold**
-   - The system is primed when environmental conditions or substrate concentrations meet the critical threshold.
-   - Primary Trigger: Forward thermodynamic or kinetic drive.
+1. **Step 1: Foundational Framework & Premise**
+   - The initial baseline definitions and governing parameters established in ${titleMention}.
+   - Primary Trigger: Verification of starting criteria and scope.
 
-2. **Step 2: Propagation & Mechanistic Transformation**
-   - Intermediate complexes form and react continuously.
-   - Governing Equation / Rate: Proportional to active reactant abundance.
+2. **Step 2: Core Mechanism & Conceptual Linkage**
+   - How individual components, rules, and operations interact sequentially.
+   - Governing Relationship: Transformations follow defined structural pathways.
 
-3. **Step 3: Homeostatic Equilibrium & Resolution**
-   - Negative feedback or product saturation caps further progression, settling the system into stable dynamic balance.
+3. **Step 3: Synthesis & Examination Resolution**
+   - Consolidation of findings and application to realistic examination problems.
 
-*Visual Flow:* [Initiation] ➔ [Intermediate Transition] ➔ [Regulated Output]`;
+*Visual Flow:* [Initiation & Definitions] ➔ [Analytical Mechanisms] ➔ [Exam Mastery & Application]`;
   } else if (explanationStyle === "bullets") {
     answer = `### ⚡ High-Yield Key Points: ${titleMention}
 
-- **Core Principle**: Governed by conservation laws and dynamic equilibrium thresholds.
-- **Key Mechanism**: Sequential progression where reactants transition through active intermediates.
-- **Primary Governing Variable**: Rate is determined by the rate-limiting bottleneck and regulatory feedback.
-- **Common Exam Trap**: Confusing equilibrium concentration with reaction velocity.
-- **Exam Memory Trick**: Remember **I.P.R.** — **I**nitiation, **P**ropagation, **R**esolution.`;
+- **Core Scope**: Essential principles, operational definitions, and analytical criteria for ${titleMention} (${matSubject}).
+- **Key Mechanism**: Sequential progression where primary concepts transition through structured analysis.
+- **Governing Factor**: Mastery of specific terminology, distinctions, and contextual examples.
+- **Common Exam Trap**: Confusing closely related definitions or overlooking qualifying conditions in multiple-choice questions.
+- **Exam Memory Rule**: Focus on exact keywords and contrastive pairs highlighted in your lecture notes.`;
   } else if (userQuery.toLowerCase().includes("quiz") || userQuery.toLowerCase().includes("question") || action === "make_questions") {
-    answer = `### 🎯 Practice Questions for ${titleMention}
+    answer = `### 🎯 Practice Examination Questions for ${titleMention}
 
-**Question 1 (Diagnostic Mechanism):**
-Which parameter directly dictates whether the system maintains equilibrium or proceeds irreversibly in the forward direction?
-- **A)** The immediate availability of catalyzed intermediate states
-- **B)** The delta between forward and reverse reaction quotients relative to K
-- **C)** Random thermal fluctuations without energy conservation
-- **D)** Static unreactive boundary constraints
+**Question 1 (Core Concept & Definitions):**
+Which of the following best characterizes the primary premise established in ${titleMention}?
+- **A)** Static unapplied theory with no empirical verification
+- **B)** Systematic application of governing principles and contextual definitions
+- **C)** Random assertions without regulatory or logical consistency
+- **D)** An outdated historical convention superseded by alternative paradigms
 
-*Correct Answer:* **B** — The thermodynamic reaction quotient relative to equilibrium constant K determines directionality.
+*Correct Answer:* **B** — The course material emphasizes systematic application grounded in validated definitions.
 
 **Question 2 (High-Yield Application):**
-What occurs when a secondary inhibitor binds to the regulatory domain?
-- **A)** The activation threshold shifts, modulating throughput via allosteric feedback.
-- **B)** All reactions cease permanently regardless of reactant abundance.
-- **C)** The equilibrium constant is multiplied tenfold.
-- **D)** Products revert spontaneously to raw materials without energy consumption.
+When analyzing practical scenarios under ${titleMention}, what is the decisive factor for full credit?
+- **A)** Precision in terminology, correct sequential reasoning, and contextual grounding
+- **B)** Length of the essay response regardless of thematic accuracy
+- **C)** Skipping definitions to jump directly to unsubstantiated conclusions
+- **D)** Memorizing peripheral trivia while ignoring core mechanisms
 
-*Correct Answer:* **A** — Regulatory feedback dampens operational throughput to prevent runaway saturation.`;
+*Correct Answer:* **A** — Examiners evaluate precision in specialized terminology and logical coherence.
+
+*Need 3 more questions or flashcards? Let me know!*`;
   } else if (action === "make_summary" || userQuery.toLowerCase().includes("summary")) {
-    answer = `### 📝 Comprehensive Summary: ${titleMention}
+    answer = `### 📝 Comprehensive Structured Summary: ${titleMention}
 
-**1. Executive Overview:**
-This material covers foundational principles, governing mechanisms, and diagnostic criteria for ${titleMention}. Understanding the relationship between regulatory checkpoints and system stability is essential for exam mastery.
+#### 1. Core Premise & Executive Scope
+${matSummary ? `*Summary from Document:* ${matSummary}\n\n` : ""}${titleMention} covers essential competencies, structured theoretical frameworks, and analytical methodologies in **${matSubject}**. The material establishes clear criteria for distinguishing fundamental concepts and applying them in academic evaluations.
 
-**2. Key Takeaways:**
-- **Foundations**: Core definitions establish system boundaries and initial states.
-- **Mechanisms**: Transformations proceed via defined pathways controlled by limiting factors.
-- **Equilibrium & Feedback**: Systems self-regulate through negative feedback to prevent catastrophic failure.
+#### 2. Key Definitions & Core Terminology
+- **Primary Concepts**: Foundational terms established in ${titleMention} provide the operational vocabulary required for accurate problem-solving and discourse.
+- **Structural Distinctions**: Clear demarcation between theoretical concepts and practical applications prevents common student misinterpretations.
+- **Contextual Framework**: How individual topics interlock to form the overarching curriculum requirements.
 
-**3. Formulas & Quantities:**
-- Always confirm dimensional consistency and appropriate boundary conditions.
-- Pay attention to proportionalities (linear vs. exponential scaling).`;
+#### 3. Analytical Frameworks & Mechanisms
+- **Sequential Progression**: Learning objectives proceed logically from foundational definitions to integrated problem analysis.
+- **Governing Criteria**: Rules, standards, and evaluative benchmarks that dictate how questions in this subject are structured and scored.
+
+#### 4. High-Yield Examination Takeaways & Common Traps
+- ⚡ **Precision in Terminology**: Exam questions frequently test your ability to differentiate between closely related concepts.
+- ⚡ **Distractor Recognition**: Watch out for answer choices that are factually true statements in general, but do not directly address the specific question stem.
+- ⚡ **Review Focus**: Prioritize recurring questions, highlighted examples, and summary sections in your notes.`;
   } else {
-    answer = `### 🎓 Academic Breakdown from StudyMate Tutor
+    answer = `### 🎓 Academic Breakdown for ${titleMention}
 
-When analyzing this topic in **${titleMention}**, here is the comprehensive scholarly breakdown:
+Here is the scholarly breakdown for **${titleMention}** (${matSubject}):
 
-1. **Foundational Principles & Governing Laws**:
-   In ${titleMention}, the core framework relies on explicit boundary conditions and rate equations. Every physical or conceptual mechanism transitions from an initial state through structured intermediate phases before reaching resolution.
+1. **Foundational Principles & Core Framework**:
+   In ${titleMention}, the academic structure relies on clear definitions and systematic relationships. Every concept transitions from baseline assumptions through structured analytical phases.
 
-2. **Causal Mechanism & Dynamics**:
-   - **Activation Phase**: Substrates or initial parameters reach the necessary activation energy.
-   - **Operational Phase**: Catalysts or transformation rules facilitate rapid forward velocity.
-   - **Regulatory Checkpoint**: System feedback dampens or accelerates throughput based on current concentration/parameter levels.
+2. **Operational Mechanisms & Dynamics**:
+   - **Baseline Criteria**: Confirm the specific definitions and boundary conditions provided in your coursework.
+   - **Core Analysis**: Trace how causes, theories, and examples connect logically.
+   - **Evaluative Checkpoints**: Apply standard academic criteria to verify validity.
 
 3. **High-Yield Examination Strategy**:
-   - Always distinguish between state variables (independent of path) and process variables.
-   - Identify the primary rate-limiting step before attempting calculation.
-   - Verify that your conclusion satisfies both extreme boundary cases (e.g. limit as t → 0 and limit as t → ∞).
+   - Master the precise definitions and keywords emphasized by the examiner.
+   - Practice active recall by explaining concepts in your own words.
+   - Review past question patterns to anticipate trick distractors.
 
-*How would you like to proceed? I can make up 5 exam questions, generate flashcards, or simplify this using everyday analogies!*`;
+*How would you like to continue? I can make up 5 exam questions, generate flashcards, or simplify this concept with everyday analogies!*`;
   }
 
   return res.json({ success: true, answer, reply: answer });

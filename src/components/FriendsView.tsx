@@ -19,7 +19,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { StudySubject } from "../types";
-import { registeredPeers, searchPeersByPhone } from "../data/registeredPeers";
+import { searchPeersByPhone, RegisteredPeer } from "../data/registeredPeers";
 
 export const FriendsView: React.FC = () => {
   const {
@@ -83,7 +83,7 @@ export const FriendsView: React.FC = () => {
     triggerConfetti();
   };
 
-  const handleAddRegisteredPeer = (peer: typeof registeredPeers[0]) => {
+  const handleAddRegisteredPeer = (peer: RegisteredPeer) => {
     const isAlreadyFriend = friends.some((f) => f.name.toLowerCase() === peer.name.toLowerCase());
     if (isAlreadyFriend) {
       setPhoneFeedback(`${peer.name} is already in your friends list!`);
@@ -237,13 +237,10 @@ export const FriendsView: React.FC = () => {
                 Find Friends with Phone Number
               </h2>
               <p className="text-[11px] text-[#1B2A4A]/70">
-                Search students signed in to StudyMate using their correct phone number or digits
+                Search students signed in to StudyMate by typing their registered phone number
               </p>
             </div>
           </div>
-          <span className="text-[11px] text-slate-500 font-medium">
-            Try searching: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0A1931]">555</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0A1931]">234</code>, <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0A1931]">7911</code>, or <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[#0A1931]">803</code>
-          </span>
         </div>
 
         {phoneFeedback && (
@@ -259,7 +256,7 @@ export const FriendsView: React.FC = () => {
             type="text"
             value={phoneSearchQuery}
             onChange={(e) => setPhoneSearchQuery(e.target.value)}
-            placeholder="Enter friend's phone number (e.g. +1 (555) 234-5678, +44 7911, or partial digits)..."
+            placeholder="Enter friend's phone number (e.g. 09047562871)..."
             className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] focus:bg-white transition"
           />
           {phoneSearchQuery && (
@@ -340,7 +337,7 @@ export const FriendsView: React.FC = () => {
               <div className="p-4 rounded-2xl bg-slate-50 border border-dashed border-slate-300 text-center space-y-1">
                 <p className="text-xs font-bold text-[#0A1931]">No registered student with this phone number</p>
                 <p className="text-[11px] text-slate-500">
-                  Ensure the phone number includes the correct digits or invite them via "Add Friend Manually".
+                  Ensure the phone number is typed correctly (e.g. 09047562871) or invite them via "Add Friend Manually".
                 </p>
               </div>
             )}
@@ -520,48 +517,22 @@ export const FriendsView: React.FC = () => {
           )}
         </div>
 
-        {/* Right: Registered StudyMate Students Directory + Privacy Controls (4 cols) */}
+        {/* Right: Phone Search Guide + Privacy Controls (4 cols) */}
         <div className="lg:col-span-4 space-y-4">
-          {/* Quick Connect Directory */}
-          <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
+          {/* Phone Lookup Guide Card */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-              <div className="w-7 h-7 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                <Users2 className="w-3.5 h-3.5" />
+              <div className="w-7 h-7 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Phone className="w-3.5 h-3.5" />
               </div>
               <div>
-                <h3 className="text-xs font-extrabold text-[#0A1931]">Signed-In StudyMate Peers</h3>
-                <p className="text-[10px] text-slate-500">Discoverable by phone number</p>
+                <h3 className="text-xs font-extrabold text-[#0A1931]">Find Friends by Phone</h3>
+                <p className="text-[10px] text-slate-500">Connect directly with your friends</p>
               </div>
             </div>
-
-            <div className="space-y-2.5">
-              {registeredPeers.slice(0, 4).map((peer) => {
-                const isAlready = friends.some((f) => f.name.toLowerCase() === peer.name.toLowerCase());
-                return (
-                  <div key={peer.id} className="p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <img src={peer.avatar} alt={peer.name} className="w-8 h-8 rounded-lg object-cover" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-[#0A1931] truncate">{peer.name}</p>
-                        <p className="text-[10px] text-emerald-700 font-semibold">{peer.phoneNumber}</p>
-                      </div>
-                    </div>
-                    {isAlready ? (
-                      <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5">
-                        <Check className="w-3 h-3" /> Added
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleAddRegisteredPeer(peer)}
-                        className="px-2 py-1 rounded-lg bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-[10px] font-bold transition cursor-pointer"
-                      >
-                        + Add
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            <p className="text-xs text-[#1B2A4A]/70 leading-relaxed">
+              Use the phone search bar above to look up friends by their registered phone number (like <span className="font-mono font-bold text-[#0A1931]">09047562871</span>). Only friends you search for and add will appear in your study circle.
+            </p>
           </div>
 
           <div className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-5">

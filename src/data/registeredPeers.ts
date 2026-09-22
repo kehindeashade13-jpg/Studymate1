@@ -16,6 +16,19 @@ export interface RegisteredPeer {
 
 export const REGISTERED_STUDYMATE_USERS: RegisteredPeer[] = [
   {
+    id: "peer-kemi",
+    name: "Kemi Balogun",
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+    email: "kemi.balogun@unilag.edu.ng",
+    phoneNumber: "09047562871",
+    school: "University of Lagos",
+    subjects: ["Computer Science", "Mathematics", "Economics"],
+    goals: "Top scores in Systems Architecture & Discrete Math",
+    interests: ["spaced repetition", "quiz battles", "peer study circles"],
+    studyStreak: 19,
+    bio: "Computer Science student on StudyMate. Add me to study together!",
+  },
+  {
     id: "peer-sophia",
     name: "Sophia Patel",
     avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
@@ -157,25 +170,60 @@ export function normalizePhone(phone: string): string {
 // Search registered peers by phone number (matches digits, country code, or name)
 export function searchPeersByPhone(query: string, additionalPeers: RegisteredPeer[] = []): RegisteredPeer[] {
   if (!query || query.trim().length < 2) return [];
-  const cleanQuery = normalizePhone(query);
+  const cleanDigits = query.replace(/\D/g, "");
   const rawQuery = query.toLowerCase().trim();
   const allPool = [...REGISTERED_STUDYMATE_USERS, ...additionalPeers];
+
+  // Domestic trunk normalization (e.g. 09047562871 -> 9047562871)
+  const queryWithoutTrunk = cleanDigits.replace(/^0+/, "");
+  const queryWithoutCountryCode = cleanDigits.replace(/^(234|1|44|61|39)/, "").replace(/^0+/, "");
 
   const results: RegisteredPeer[] = [];
   const seenIds = new Set<string>();
 
   for (const peer of allPool) {
     if (seenIds.has(peer.id)) continue;
-    const peerClean = normalizePhone(peer.phoneNumber);
-    const peerRaw = peer.phoneNumber.toLowerCase();
+    const peerDigits = peer.phoneNumber.replace(/\D/g, "");
+    const peerWithoutTrunk = peerDigits.replace(/^0+/, "");
+    const peerWithoutCountryCode = peerDigits.replace(/^(234|1|44|61|39)/, "").replace(/^0+/, "");
 
-    // Check if clean digits match or raw text matches
-    const isPhoneMatch =
-      cleanQuery.length >= 2 &&
-      (peerClean.includes(cleanQuery) ||
-        cleanQuery.includes(peerClean.replace(/^\+/, "")) ||
-        peerClean.endsWith(cleanQuery) ||
-        cleanQuery.endsWith(peerClean.replace(/^\+\d{1,3}/, "")));
+    // 1. Direct digit matching
+    let isPhoneMatch = false;
+
+    if (cleanDigits.length >= 2) {
+      if (
+        peerDigits === cleanDigits ||
+        peerDigits.includes(cleanDigits) ||
+        cleanDigits.includes(peerDigits) ||
+        peerDigits.endsWith(cleanDigits)
+      ) {
+        isPhoneMatch = true;
+      }
+    }
+
+    // 2. Trunk-normalized matching (e.g. 09047562871 matching +234 904 756 2871 or 09047562871)
+    if (!isPhoneMatch && queryWithoutTrunk.length >= 3) {
+      if (
+        peerDigits.endsWith(queryWithoutTrunk) ||
+        peerWithoutTrunk.endsWith(queryWithoutTrunk) ||
+        peerWithoutCountryCode === queryWithoutTrunk ||
+        peerWithoutCountryCode.includes(queryWithoutTrunk) ||
+        queryWithoutTrunk.includes(peerWithoutCountryCode)
+      ) {
+        isPhoneMatch = true;
+      }
+    }
+
+    // 3. Country-code-normalized matching
+    if (!isPhoneMatch && queryWithoutCountryCode.length >= 3) {
+      if (
+        peerWithoutCountryCode === queryWithoutCountryCode ||
+        peerWithoutCountryCode.includes(queryWithoutCountryCode) ||
+        peerWithoutCountryCode.endsWith(queryWithoutCountryCode)
+      ) {
+        isPhoneMatch = true;
+      }
+    }
 
     const isNameMatch = peer.name.toLowerCase().includes(rawQuery);
     const isSchoolMatch = peer.school.toLowerCase().includes(rawQuery);

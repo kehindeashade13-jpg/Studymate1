@@ -27,7 +27,7 @@ import {
   HelpCircle,
 } from "lucide-react";
 import { StudySubject, GroupMember, StudyFriend } from "../types";
-import { REGISTERED_STUDYMATE_USERS, searchPeersByPhone, RegisteredPeer } from "../data/registeredPeers";
+import { searchPeersByPhone, RegisteredPeer } from "../data/registeredPeers";
 
 type TopViewMode = "groups" | "friends" | "find_phone";
 
@@ -348,12 +348,8 @@ export const GroupsView: React.FC = () => {
                 </h2>
               </div>
               <p className="text-xs text-[#1B2A4A]/70">
-                Type the phone number registered on StudyMate. The user will pop up with their verified name and details.
+                Type the phone number registered on StudyMate to find your friend's profile and add them.
               </p>
-            </div>
-
-            <div className="text-xs text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
-              Quick test digits: <b className="text-[#0A1931]">555</b>, <b className="text-[#0A1931]">234</b>, <b className="text-[#0A1931]">7911</b>, <b className="text-[#0A1931]">803</b>, <b className="text-[#0A1931]">412</b>
             </div>
           </div>
 
@@ -365,7 +361,7 @@ export const GroupsView: React.FC = () => {
               id="phone-search-input"
               value={phoneSearchQuery}
               onChange={(e) => setPhoneSearchQuery(e.target.value)}
-              placeholder="Search phone number (e.g., +1 (555) 234-5678, +44 7911 123456, +234 803 123 4567, or 555)..."
+              placeholder="Enter friend's phone number (e.g. 09047562871)..."
               className="w-full pl-10 pr-10 py-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs sm:text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] focus:bg-white transition shadow-2xs font-medium"
             />
             {phoneSearchQuery && (
@@ -488,86 +484,24 @@ export const GroupsView: React.FC = () => {
                     No registered user matching "{phoneSearchQuery}"
                   </p>
                   <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                    Check the digits or country code. You can also view all signed-in StudyMate peers below.
+                    Please check the number (e.g. 09047562871) or verify your friend's registered phone number.
                   </p>
                 </div>
               )}
             </div>
           ) : (
-            /* Default All Registered Peers Directory */
-            <div className="space-y-3">
-              <h3 className="text-xs font-extrabold text-[#0A1931] uppercase tracking-wider">
-                Discoverable Registered Students on StudyMate ({REGISTERED_STUDYMATE_USERS.length})
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {REGISTERED_STUDYMATE_USERS.map((peer) => {
-                  const isAlreadyFriend = friends.some(
-                    (f) =>
-                      f.name.toLowerCase() === peer.name.toLowerCase() ||
-                      (f.phoneNumber && f.phoneNumber === peer.phoneNumber)
-                  );
-
-                  return (
-                    <div
-                      key={peer.id}
-                      className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200 hover:border-[#0A1931]/30 transition flex flex-col justify-between space-y-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={peer.avatar}
-                          alt={peer.name}
-                          referrerPolicy="no-referrer"
-                          className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-[#0A1931] truncate">{peer.name}</p>
-                          <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1">
-                            <Phone className="w-3 h-3" />
-                            <span>{peer.phoneNumber}</span>
-                          </p>
-                          <p className="text-[10px] text-slate-500 truncate">{peer.school}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
-                        {isAlreadyFriend ? (
-                          <span className="text-[11px] font-bold text-emerald-700 flex items-center gap-1 flex-1">
-                            <Check className="w-3 h-3" /> Added
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleAddRegisteredPeerToFriends(peer)}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#0A1931] hover:bg-[#1B2A4A] text-white text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer flex-1"
-                          >
-                            <UserPlus className="w-3 h-3" />
-                            <span>Add</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleAddRegisteredPeerToFriends(peer);
-                            startDirectChatWithFriend({
-                              id: peer.id,
-                              name: peer.name,
-                              avatar: peer.avatar,
-                              phoneNumber: peer.phoneNumber,
-                              school: peer.school,
-                              subjects: peer.subjects as StudySubject[],
-                            });
-                            setTopMode("groups");
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-[#0A1931] border border-slate-300 text-[11px] font-bold transition flex items-center justify-center gap-1 cursor-pointer flex-1"
-                        >
-                          <MessageSquare className="w-3 h-3" />
-                          <span>Chat</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+            /* Clean Empty State Prompt */
+            <div className="p-8 sm:p-12 rounded-3xl bg-slate-50/70 border border-dashed border-slate-200 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto border border-emerald-100 shadow-2xs">
+                <Phone className="w-6 h-6" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-sm font-extrabold text-[#0A1931]">
+                  Find Classmates by Phone Number
+                </h3>
+                <p className="text-xs text-[#1B2A4A]/70 leading-relaxed">
+                  Type your friend's registered phone number (like <span className="font-mono font-bold text-[#0A1931]">09047562871</span>) in the search box above to look up their StudyMate profile and add them to your study circle.
+                </p>
               </div>
             </div>
           )}
