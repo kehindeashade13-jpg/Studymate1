@@ -60,4 +60,10 @@ export function fetchMaterialsFromSupabase(): Promise<{
   error?: string;
 }>;
 
+export function deleteMaterialFromDatabase(materialId: string): Promise<{
+  success: boolean;
+  isLocalFallback?: boolean;
+  error?: string;
+}>;
+
 export function getSupabaseTablesSql(): string;

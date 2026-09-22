@@ -540,63 +540,63 @@ export function generateDiagnosticQuestions(
     return { term: fallbackTerm, definition: fallbackDef };
   };
 
-  const d0 = getDef(0, "Core Mechanism", "The central operational pathway governing state changes and systemic conversion.");
-  const d1 = getDef(1, "Activation Threshold", "The minimum kinetic or thermodynamic barrier required to initiate forward activity.");
-  const d2 = getDef(2, "Dynamic Equilibrium", "A balanced state where forward and reverse transformation rates are exactly equal.");
-  const d3 = getDef(3, "Limiting Constraint", "The essential rate-limiting component or resource with lowest availability.");
-  const d4 = getDef(4, "Feedback Regulation", "A self-adjusting control mechanism that alters upstream input velocity based on output levels.");
-  const d5 = getDef(5, "Conservation Law", "The physical principle that mass, charge, and energy remain constant across transformations.");
-  const d6 = getDef(6, "Catalytic Efficiency", "The enhancement of transformation velocity by providing a lower activation pathway without altering overall free energy.");
-  const d7 = getDef(7, "Phase Boundary", "The physical interface separating distinct states or operational compartments in the system.");
-  const d8 = getDef(8, "Steady-State Flux", "The continuous throughput of reactants or signals where intermediate concentrations remain unvarying.");
-  const d9 = getDef(9, "Molecular Affinity", "The intrinsic binding strength and kinetic specificity between interacting components.");
-  const d10 = getDef(10, "Thermodynamic Driving Force", "The net free energy difference driving forward progression toward minimal system entropy.");
-  const d11 = getDef(11, "Rate-Determining Bottleneck", "The slowest individual reaction or transmission step governing the global system velocity.");
+  const d0 = getDef(0, "Foundational Principle", `The primary conceptual framework governing ${cleanTitleStr}.`);
+  const d1 = getDef(1, "Core Methodology", `The systematic approach and analytical rules applied in ${cleanTitleStr}.`);
+  const d2 = getDef(2, "Operational Standard", `The criteria used to evaluate consistency and validity in ${cleanTitleStr}.`);
+  const d3 = getDef(3, "Primary Application", `How principles of ${cleanTitleStr} are executed in real-world scenarios.`);
+  const d4 = getDef(4, "Systemic Regulation", `The structured guidelines and constraints governing ${cleanTitleStr}.`);
+  const d5 = getDef(5, "Fundamental Rule", `The invariant rules and axioms foundational to ${cleanTitleStr}.`);
+  const d6 = getDef(6, "Analytical Framework", `The logical structure for breaking down complex problems in ${cleanTitleStr}.`);
+  const d7 = getDef(7, "Contextual Scope", `The boundary conditions and scenarios where rules in ${cleanTitleStr} apply.`);
+  const d8 = getDef(8, "Systemic Integrity", `Maintaining logical coherence and precision across all parts of ${cleanTitleStr}.`);
+  const d9 = getDef(9, "Conceptual Distinction", `The precise differentiation between related ideas in ${cleanTitleStr}.`);
+  const d10 = getDef(10, "Guiding Axiom", `The core truth that underpins reasoning and problem solving in ${cleanTitleStr}.`);
+  const d11 = getDef(11, "Critical Bottleneck", `The rate-limiting constraint or primary challenge in mastering ${cleanTitleStr}.`);
 
   const q1: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-1`,
     type: "scenario",
-    question: `[Applied Scenario] During an experiment investigating ${cleanTitleStr}, an investigator modifies reaction conditions. Which specific observation directly confirms that the system is operating according to the governing principles of ${d0.term}?`,
+    question: `[Applied Scenario] When analyzing an academic problem in ${cleanTitleStr}, an examiner evaluates the role of "${d0.term}". Which observation directly confirms understanding?`,
     options: [
-      `The operational response adjusts dynamically according to ${d0.definition.toLowerCase()}, preserving system stability.`,
-      "The process accelerates to infinite speed without consuming any substrate or energetic input.",
-      "Both forward and reverse transformations cease completely and irreversibly.",
-      "Measured output variables fluctuate at random with zero physical correlation.",
+      `The analysis correctly demonstrates that ${d0.definition.toLowerCase()}`,
+      "The student ignores all contextual guidelines and foundational rules.",
+      "The analysis assumes that concepts operate arbitrarily with zero structural logic.",
+      "The terms are cited without any connection to the underlying meaning.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `The operational response adjusts dynamically according to ${d0.definition.toLowerCase()}, preserving system stability.`,
-    explanation: `Diagnostic analysis: observing measured stabilization confirms that "${d0.term}" is functioning as expected under empirical conditions.`,
-    topicTag: "Applied Scenario & Observation",
+    correctAnswer: `The analysis correctly demonstrates that ${d0.definition.toLowerCase()}`,
+    explanation: `Diagnostic analysis: correctly demonstrating that "${d0.term}" (${d0.definition}) is functioning confirms mastery of foundational principles.`,
+    topicTag: "Applied Scenario & Principles",
     difficulty: "medium",
   };
 
   const q2: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-2`,
     type: "multiple_choice",
-    question: `[Causal Mechanism] In ${cleanTitleStr}, what is the direct systemic consequence when the critical threshold for "${d1.term}" is successfully achieved?`,
+    question: `[Conceptual Role] In ${cleanTitleStr}, what is the primary function and significance of "${d1.term}"?`,
     options: [
-      `It initiates the forward transition because ${d1.definition.toLowerCase()}`,
-      "It completely violates the universal conservation of mass across all boundaries.",
-      "The system becomes permanently inert and unresponsive to energetic inputs.",
-      "All potential energy converts spontaneously into destructive resonance.",
+      `It serves as ${d1.definition.toLowerCase()}`,
+      "It completely invalidates all previously established rules.",
+      "It makes systematic analysis impossible by introducing arbitrary chaos.",
+      "It is an obsolete term with no practical application.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `It initiates the forward transition because ${d1.definition.toLowerCase()}`,
-    explanation: `Diagnostic reasoning traces the causal mechanism: overcoming the barrier of "${d1.term}" allows forward progression.`,
-    topicTag: "Causal Mechanisms & Pathways",
+    correctAnswer: `It serves as ${d1.definition.toLowerCase()}`,
+    explanation: `Understanding the exact role of "${d1.term}" (${d1.definition}) enables accurate reasoning in problem sets.`,
+    topicTag: "Core Methodology & Function",
     difficulty: "medium",
   };
 
   const q3: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-3`,
     type: "scenario",
-    question: `[Boundary Condition] Under which operating condition would the standard theoretical model for "${d2.term}" in ${cleanTitleStr} break down or require non-ideal corrections?`,
+    question: `[Boundary Condition] Under which circumstance does the standard application of "${d2.term}" in ${cleanTitleStr} require careful contextual adjustment?`,
     options: [
-      "When an intense external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
-      "Whenever measurements are recorded using standard SI metric units.",
-      "When temperature and pressure are maintained strictly uniform throughout the system.",
-      "Whenever a homogeneous catalyst is introduced.",
+      "When external constraints or novel edge-case scenarios fall outside standard assumptions.",
+      "Whenever standard academic formatting guidelines are followed.",
+      "Under normal, baseline conditions where all standard rules hold.",
+      "Whenever standard terminology is cited correctly.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "When an intense external perturbation exceeds the compensatory rate of opposing processes, forcing the system out of balance.",
-    explanation: `Diagnostic edge cases evaluate boundary limits: "${d2.term}" relies on equal dynamic exchange, which fails if rapid shock overwhelms compensation.`,
+    correctAnswer: "When external constraints or novel edge-case scenarios fall outside standard assumptions.",
+    explanation: `Contextual boundaries: rules and models must be adjusted when scenario constraints deviate from standard assumptions.`,
     topicTag: "Boundary Conditions & Edge Cases",
     difficulty: "hard",
   };
@@ -604,272 +604,272 @@ export function generateDiagnosticQuestions(
   const q4: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-4`,
     type: "multiple_choice",
-    question: `[Diagnostic Misconception] When analyzing experimental findings for ${cleanTitleStr}, which erroneous interpretation leads to a false diagnostic conclusion regarding "${d3.term}"?`,
+    question: `[Diagnostic Misconception] When reviewing ${cleanTitleStr}, which common error leads students to misinterpret "${d3.term}"?`,
     options: [
-      `Confusing a temporary throughput restriction governed by ${d3.term} with complete thermodynamic cessation.`,
-      "Calibrating sensors against verified reference standards prior to testing.",
-      "Maintaining controlled baseline variables across successive trial iterations.",
-      "Logging data points at uniform, high-resolution time intervals.",
+      `Failing to recognize that ${d3.definition.toLowerCase()}`,
+      "Carefully checking assumptions and defining terms before answering.",
+      "Using structured problem-solving steps.",
+      "Verifying definitions against authentic course materials.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `Confusing a temporary rate restriction governed by ${d3.term} with complete thermodynamic cessation.`,
-    explanation: `A classic diagnostic error is mistaking the rate restriction imposed by "${d3.term}" for a dead or halted system.`,
-    topicTag: "Misconceptions & Diagnostic Traps",
+    correctAnswer: `Failing to recognize that ${d3.definition.toLowerCase()}`,
+    explanation: `A frequent student trap is overlooking the precise definition and scope of "${d3.term}".`,
+    topicTag: "Misconceptions & Pitfalls",
     difficulty: "medium",
   };
 
   const q5: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-5`,
     type: "multiple_choice",
-    question: `[Quantitative Relationship] In ${cleanTitleStr}, how is the active modulation of "${d4.term}" mathematically coupled with overall operational efficiency?`,
+    question: `[Systemic Relationship] In ${cleanTitleStr}, how does "${d4.term}" relate to overall coherence and efficiency?`,
     options: [
-      `It optimizes efficiency by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
-      "It eliminates the requirement for any energetic or physical input.",
-      "It forces all forward velocity to zero indefinitely.",
-      "It causes unpredictable sinusoidal oscillations with zero damping.",
+      `It ensures stability by providing structured regulation, as described by ${d4.definition.toLowerCase()}`,
+      "It removes the need for any foundational knowledge or rules.",
+      "It prevents any progress from occurring across all levels.",
+      "It forces all principles to operate in total isolation.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `It optimizes efficiency by continuously dampening overshoot, exactly as described by ${d4.definition.toLowerCase()}`,
-    explanation: `Quantitative analysis reveals that "${d4.term}" actively modulates velocity to keep throughput near the optimal capacity curve.`,
-    topicTag: "Quantitative & Kinetic Coupling",
+    correctAnswer: `It ensures stability by providing structured regulation, as described by ${d4.definition.toLowerCase()}`,
+    explanation: `Systemic relationships: "${d4.term}" provides essential regulatory control to maintain stability.`,
+    topicTag: "Systemic Relationships",
     difficulty: "hard",
   };
 
   const q6: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-6`,
     type: "scenario",
-    question: `[Equilibrium Perturbation] If an investigator applies Le Chatelier / homeostatic stress to a system in ${cleanTitleStr} governed by "${d2.term}", how does the system compensate?`,
+    question: `[Problem Resolution] If a student encounters a challenging scenario in ${cleanTitleStr} governed by "${d2.term}", what is the most effective approach?`,
     options: [
-      "It shifts net flux in the direction that opposes and relieves the applied stress until a new balanced state is established.",
-      "It amplifies the stress exponentially until the entire system collapses.",
-      "It instantly stops all molecular and energetic interactions permanently.",
-      "It maintains identical absolute concentrations regardless of extreme external additions.",
+      "Break down the scenario into foundational elements and apply governing criteria systematically.",
+      "Abandon the problem and guess without analyzing given information.",
+      "Assume the rules of the subject contradict each other randomly.",
+      "Apply unrelated formulas without checking relevance to the topic.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "It shifts net flux in the direction that opposes and relieves the applied stress until a new balanced state is established.",
-    explanation: `Equilibrium response dictates that stress induces compensatory flux shift to minimize the perturbation.`,
-    topicTag: "Dynamic Equilibrium & Compensation",
+    correctAnswer: "Break down the scenario into foundational elements and apply governing criteria systematically.",
+    explanation: `Systematic problem solving: decomposing problems into core principles yields accurate diagnostic conclusions.`,
+    topicTag: "Problem Solving & Analysis",
     difficulty: "medium",
   };
 
   const q7: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-7`,
     type: "multiple_choice",
-    question: `[Comparative Discrimination] Which statement accurately discriminates between the operational role of "${d0.term}" and "${d6.term}" in ${cleanTitleStr}?`,
+    question: `[Comparative Distinction] Which statement accurately distinguishes the role of "${d0.term}" from "${d6.term}" in ${cleanTitleStr}?`,
     options: [
-      `"${d0.term}" establishes the fundamental conversion logic, whereas "${d6.term}" lowers the barrier to accelerate progression toward the same endpoint.`,
-      `"${d6.term}" shifts the fundamental thermodynamic equilibrium constant, whereas "${d0.term}" does not.`,
-      `Both concepts refer to identical physical processes with no functional distinction.`,
-      `"${d0.term}" is only active in open systems, whereas "${d6.term}" only functions at absolute zero.`,
+      `"${d0.term}" establishes foundational premises, while "${d6.term}" provides analytical methods for problem solving.`,
+      `Both concepts have identical meanings with no meaningful distinction.`,
+      `"${d0.term}" is only used in introductory overviews and has no practical application.`,
+      `"${d6.term}" completely contradicts the principles of "${d0.term}".`,
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `"${d0.term}" establishes the fundamental conversion logic, whereas "${d6.term}" lowers the barrier to accelerate progression toward the same endpoint.`,
-    explanation: `Comparative analysis clarifies functional separation: catalysts lower activation barriers without altering thermodynamic equilibrium.`,
-    topicTag: "Comparative Discrimination",
+    correctAnswer: `"${d0.term}" establishes foundational premises, while "${d6.term}" provides analytical methods for problem solving.`,
+    explanation: `Comparative discrimination: distinguishing foundational principles from analytical frameworks is critical for exam precision.`,
+    topicTag: "Comparative Distinction",
     difficulty: "hard",
   };
 
   const q8: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-8`,
     type: "multiple_choice",
-    question: `[Rate-Limiting Bottleneck] In a multi-step pathway within ${cleanTitleStr}, doubling all reactants except "${d3.term}" fails to increase final output. What does this diagnose?`,
+    question: `[Critical Constraint] In ${cleanTitleStr}, why is understanding "${d11.term}" essential for solving complex scenarios?`,
     options: [
-      `"${d3.term}" represents the rate-determining bottleneck whose saturation threshold caps overall system velocity.`,
-      "The entire reaction has violated energy conservation principles.",
-      "The reactants have turned completely non-reactive.",
-      "The measuring apparatus has permanently lost sensitivity.",
+      `It represents the critical constraint that dictates overall effectiveness and accuracy.`,
+      "It has no bearing on final results or conceptual outcomes.",
+      "It proves that all problems can be solved with zero effort.",
+      "It operates completely outside the rules of the subject.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `"${d3.term}" represents the rate-determining bottleneck whose saturation threshold caps overall system velocity.`,
-    explanation: `Bottleneck analysis: the slowest step throttles total throughput regardless of excess upstream or downstream components.`,
-    topicTag: "Rate-Limiting Bottlenecks",
+    correctAnswer: `It represents the critical constraint that dictates overall effectiveness and accuracy.`,
+    explanation: `Critical constraints: identifying bottlenecks ensures students focus on the most impactful factors.`,
+    topicTag: "Critical Constraints & Bottlenecks",
     difficulty: "medium",
   };
 
   const q9: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-9`,
     type: "multiple_choice",
-    question: `[Structural Hierarchy] How does the presence of "${d7.term}" compartmentalize and preserve functional specialization in ${cleanTitleStr}?`,
+    question: `[Structural Hierarchy] How does the concept of "${d7.term}" define the organization of ${cleanTitleStr}?`,
     options: [
-      `It maintains localized gradients and selective permeability, preventing dilution and erratic cross-talk.`,
-      "It completely halts all physical and energetic exchange across all boundaries.",
-      "It renders internal components completely homogeneous with outer surroundings.",
-      "It forces the system into a static, non-interacting crystalline lattice.",
+      `It establishes the contextual boundaries and domains where principles are valid.`,
+      "It creates arbitrary divisions with no logical basis.",
+      "It prevents any interaction between related concepts.",
+      "It eliminates the need for categorization or structure.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "It maintains localized gradients and selective permeability, preventing dilution and erratic cross-talk.",
-    explanation: `Structural organization provides compartmental barriers necessary for localized microenvironments and gradient maintenance.`,
-    topicTag: "Structural Organization & Compartments",
+    correctAnswer: "It establishes the contextual boundaries and domains where principles are valid.",
+    explanation: `Structural organization defines the context within which subject concepts and rules apply.`,
+    topicTag: "Structural Hierarchy & Organization",
     difficulty: "medium",
   };
 
   const q10: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-10`,
     type: "scenario",
-    question: `[Environmental Perturbation] When temperature in a ${cleanTitleStr} system increases significantly, what happens to the molecular interaction described by "${d9.term}"?`,
+    question: `[Contextual Application] When examining a real-world case study in ${cleanTitleStr}, how should "${d9.term}" be evaluated?`,
     options: [
-      "Thermal agitation increases kinetic disruption, reducing binding stability unless activation energy requirements dominate.",
-      "Binding affinity becomes infinitely strong and completely irreversible.",
-      "Temperature has zero effect on kinetic energy or intermolecular collision frequencies.",
-      "All molecular bonds decompose spontaneously into pure light.",
+      "By distinguishing its specific characteristics from related concepts to avoid overgeneralization.",
+      "By treating all terms as interchangeable synonyms.",
+      "By ignoring definitions and relying purely on personal intuition.",
+      "By assuming that context has no effect on meaning.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "Thermal agitation increases kinetic disruption, reducing binding stability unless activation energy requirements dominate.",
-    explanation: `Thermal physics reveals that elevated kinetic motion disrupts non-covalent complexes and shifts dynamic binding equilibria.`,
-    topicTag: "Environmental Perturbation",
+    correctAnswer: "By distinguishing its specific characteristics from related concepts to avoid overgeneralization.",
+    explanation: `Rigorous academic analysis requires distinguishing specific conceptual nuances to avoid overgeneralization.`,
+    topicTag: "Contextual Application",
     difficulty: "hard",
   };
 
   const q11: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-11`,
     type: "multiple_choice",
-    question: `[Diagnostic Indicator] Which measurable readout provides the most rigorous diagnostic verification that "${d8.term}" has been established in ${cleanTitleStr}?`,
+    question: `[Evaluation Metric] Which indicator provides the clearest evidence that "${d8.term}" is maintained in ${cleanTitleStr}?`,
     options: [
-      "Net intermediate concentrations remain steady over time while reactant consumption and product generation proceed continuously.",
-      "All fluid motion and molecular collisions cease completely.",
-      "The system experiences sudden, uncontrollable pressure spikes every cycle.",
-      "The total mass of the closed system doubles every 10 seconds.",
+      "All statements and conclusions remain logically consistent and supported by evidence.",
+      "The analysis contains internal contradictions.",
+      "Arguments are presented without reference to foundational definitions.",
+      "Conclusions are drawn before reviewing available evidence.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "Net intermediate concentrations remain steady over time while reactant consumption and product generation proceed continuously.",
-    explanation: `Diagnostic indicator of steady state is constant internal concentrations maintained by balanced input and output fluxes.`,
-    topicTag: "Diagnostic Verification & Indicators",
+    correctAnswer: "All statements and conclusions remain logically consistent and supported by evidence.",
+    explanation: `Systemic integrity is demonstrated through logical consistency and evidence-backed reasoning.`,
+    topicTag: "Evaluation & Evidence",
     difficulty: "medium",
   };
 
   const q12: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-12`,
     type: "scenario",
-    question: `[Feedback Regulation] In ${cleanTitleStr}, if the accumulation of downstream products inhibits upstream enzymes through "${d4.term}", what is the primary benefit?`,
+    question: `[Regulatory Control] In ${cleanTitleStr}, what is the main purpose of applying "${d4.term}"?`,
     options: [
-      "It prevents wasteful overproduction and protects against toxic intermediate accumulation.",
-      "It ensures that upstream resources are depleted as rapidly as possible.",
-      "It causes the system to run in reverse until all starting material is destroyed.",
-      "It converts the system from dynamic to completely non-functional.",
+      "To maintain standard quality, prevent errors, and guide consistent outcomes.",
+      "To encourage arbitrary variance with no standard procedure.",
+      "To make communication unnecessarily obscure.",
+      "To disregard student comprehension completely.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "It prevents wasteful overproduction and protects against toxic intermediate accumulation.",
-    explanation: `Negative feedback regulation provides economical self-limiting control to preserve homeostatic stability.`,
-    topicTag: "Feedback Regulation & Homeostasis",
+    correctAnswer: "To maintain standard quality, prevent errors, and guide consistent outcomes.",
+    explanation: `Regulatory guidelines ensure consistency, clarity, and reliability across academic analyses.`,
+    topicTag: "Regulatory Control & Quality",
     difficulty: "easy",
   };
 
   const q13: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-13`,
     type: "multiple_choice",
-    question: `[Thermodynamic Feasibility] What determines whether a transformation in ${cleanTitleStr} driven by "${d10.term}" will proceed spontaneously under standard conditions?`,
+    question: `[Theoretical Foundation] What is the core rationale behind "${d10.term}" in ${cleanTitleStr}?`,
     options: [
-      "A net negative change in Gibbs free energy (ΔG < 0), indicating energetic favorability.",
-      "A requirement for continuous external manual stirring at all times.",
-      "The transformation must generate brand new elemental atoms.",
-      "The forward reaction rate must equal exactly 1 mole per microsecond regardless of temperature.",
+      `It provides the foundational principle that ${d10.definition.toLowerCase()}`,
+      "It is an unsubstantiated claim with no academic basis.",
+      "It contradicts all empirical observations.",
+      "It applies only to hypothetical scenarios with no real relevance.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "A net negative change in Gibbs free energy (ΔG < 0), indicating energetic favorability.",
-    explanation: `Thermodynamics dictates that spontaneous processes require negative ΔG (favorable balance of enthalpy and entropy).`,
-    topicTag: "Thermodynamic & Energetic Feasibility",
+    correctAnswer: `It provides the foundational principle that ${d10.definition.toLowerCase()}`,
+    explanation: `Foundational axioms anchor the entire logical framework of the course.`,
+    topicTag: "Theoretical Foundations",
     difficulty: "medium",
   };
 
   const q14: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-14`,
     type: "scenario",
-    question: `[Depletion Effect] In ${cleanTitleStr}, if a specific competitive inhibitor completely blocks "${d11.term}", what is the immediate diagnostic consequence?`,
+    question: `[Diagnostic Trouble Analysis] If an analysis in ${cleanTitleStr} produces inconsistent results, what should be audited first?`,
     options: [
-      "Upstream pathway precursors accumulate while all downstream product synthesis drops to near zero.",
-      "Downstream products multiply exponentially while upstream precursors disappear.",
-      "The entire reaction bypasses the bottleneck without any loss of efficiency.",
-      "The temperature of the system drops immediately to absolute zero.",
+      `Verify whether the definitions and assumptions related to "${d0.term}" were correctly applied.`,
+      "Assume the subject rules are invalid and restart without structure.",
+      "Change the final answer arbitrarily without checking underlying reasoning.",
+      "Ignore the inconsistency and submit the result.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "Upstream pathway precursors accumulate while all downstream product synthesis drops to near zero.",
-    explanation: `Pathways blocked at a specific step demonstrate upstream accumulation and downstream starvation.`,
-    topicTag: "Depletion & Inhibition Dynamics",
+    correctAnswer: `Verify whether the definitions and assumptions related to "${d0.term}" were correctly applied.`,
+    explanation: `Systematic debugging begins by verifying foundational assumptions and baseline definitions.`,
+    topicTag: "Diagnostic Trouble Analysis",
     difficulty: "hard",
   };
 
   const q15: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-15`,
     type: "multiple_choice",
-    question: `[Order of Operations] What is the correct sequential order of operational stages when ${cleanTitleStr} responds to an environmental shift?`,
+    question: `[Order of Analysis] What is the recommended sequential process when solving an exam problem in ${cleanTitleStr}?`,
     options: [
-      `1. Sensor detection -> 2. Signal transduction -> 3. Modulation via ${d4.term} -> 4. Restoration of ${d2.term}.`,
-      `1. Equilibrium restoration -> 2. Stress occurrence -> 3. Sensor shutdown -> 4. Uncontrolled reaction.`,
-      `1. Permanent failure -> 2. Signal amplification -> 3. Reverse time progression -> 4. Initial condition.`,
-      `1. Full reactant depletion -> 2. Sensor activation -> 3. Zero feedback -> 4. Complete stagnation.`,
+      `1. Identify key terms -> 2. Establish context -> 3. Apply "${d1.term}" -> 4. Formulate verified conclusion.`,
+      "1. Guess conclusion -> 2. Ignore question -> 3. Select random option -> 4. Submit.",
+      "1. Skip definitions -> 2. Jump to calculations -> 3. Disregard units -> 4. Finalize.",
+      "1. Write conclusion first -> 2. Create assumptions -> 3. Discard constraints -> 4. Exit.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `1. Sensor detection -> 2. Signal transduction -> 3. Modulation via ${d4.term} -> 4. Restoration of ${d2.term}.`,
-    explanation: `System logic proceeds through a structured stimulus-response-feedback sequence to achieve stabilization.`,
-    topicTag: "Sequential Logic & Pathways",
+    correctAnswer: `1. Identify key terms -> 2. Establish context -> 3. Apply "${d1.term}" -> 4. Formulate verified conclusion.`,
+    explanation: `Sequential problem solving follows a structured logical order from identification to verified conclusion.`,
+    topicTag: "Sequential Logic & Method",
     difficulty: "medium",
   };
 
   const q16: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-16`,
     type: "multiple_choice",
-    question: `[Conservation Criteria] When evaluating mass and energy balances across ${cleanTitleStr} in accordance with "${d5.term}", what must always hold true?`,
+    question: `[Core Axiom] When applying "${d5.term}" in ${cleanTitleStr}, what foundational guideline must always be preserved?`,
     options: [
-      "Total mass and energy entering a closed boundary must equal total mass and energy exiting plus any internal accumulation.",
-      "Energy is spontaneously generated from empty space during high-velocity reactions.",
-      "Reactant mass can disappear without producing any measurable energy or product.",
-      "Output mass is strictly independent of input mass under all scenarios.",
+      `That ${d5.definition.toLowerCase()}`,
+      "That rules can be arbitrarily changed during analysis.",
+      "That evidence is optional when stating a conclusion.",
+      "That foundational definitions do not matter in advanced topics.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "Total mass and energy entering a closed boundary must equal total mass and energy exiting plus any internal accumulation.",
-    explanation: `The fundamental first law of conservation requires an exact balance between input, output, accumulation, and transformation.`,
-    topicTag: "Conservation Laws & State Balances",
+    correctAnswer: `That ${d5.definition.toLowerCase()}`,
+    explanation: `Core axioms must be rigorously respected to preserve academic validity.`,
+    topicTag: "Core Axioms & Rules",
     difficulty: "easy",
   };
 
   const q17: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-17`,
     type: "scenario",
-    question: `[Pathway Reversibility] Under what specific thermodynamic constraint can a chemical or biological pathway in ${cleanTitleStr} be operated in the reverse direction?`,
+    question: `[Advanced Application] How can a student demonstrate complete synthesis of ${cleanTitleStr} in a free-response exam?`,
     options: [
-      "When coupled to a sufficiently exergonic reaction (such as ATP or pyrophosphate cleavage) that overcomes unfavorable ΔG.",
-      "Whenever the system is illuminated with green light.",
-      "Simply by thinking about the reverse pathway without adding energy.",
-      "Under no circumstances, because all physical reactions are strictly unidirectional.",
+      `By accurately integrating "${d0.term}", "${d1.term}", and "${d2.term}" into a coherent, evidence-based argument.`,
+      "By repeating memorized definitions without explaining how they connect.",
+      "By avoiding technical terminology altogether.",
+      "By stating opinions without academic citations or evidence.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: "When coupled to a sufficiently exergonic reaction (such as ATP or pyrophosphate cleavage) that overcomes unfavorable ΔG.",
-    explanation: `Thermodynamically unfavorable (endergonic) reverse processes must be coupled to strongly exergonic drivers to proceed.`,
-    topicTag: "Pathway Reversibility & Energy Coupling",
+    correctAnswer: `By accurately integrating "${d0.term}", "${d1.term}", and "${d2.term}" into a coherent, evidence-based argument.`,
+    explanation: `Synthesis involves combining core concepts into unified, reasoned explanations.`,
+    topicTag: "Advanced Synthesis & Mastery",
     difficulty: "hard",
   };
 
   const q18: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-18`,
     type: "multiple_choice",
-    question: `[Threshold Dynamics] What separates a sub-threshold perturbation from a full catalytic or signaling cascade in ${cleanTitleStr}?`,
+    question: `[Verification Threshold] What standard distinguishes an exceptional response on ${cleanTitleStr} from an average one?`,
     options: [
-      `Exceeding "${d1.term}", which triggers positive cooperativity and overcomes background damping.`,
-      "Sub-threshold perturbations move faster than the speed of light.",
-      "There is no threshold; all stimuli produce identical maximal responses regardless of magnitude.",
-      "Sub-threshold stimuli permanently destroy the receiving receptors.",
+      "Clear conceptual precision, contextual nuance, and structured explanation of causes and effects.",
+      "Vague descriptions with ambiguous terminology.",
+      "Excessive word count without substantive academic content.",
+      "Omitting definitions of key operational terms.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `Exceeding "${d1.term}", which triggers positive cooperativity and overcomes background damping.`,
-    explanation: `Threshold dynamics dictate that only stimuli sufficient to surpass activation barriers trigger self-sustaining cascades.`,
-    topicTag: "Threshold Dynamics & All-or-None Cascades",
+    correctAnswer: "Clear conceptual precision, contextual nuance, and structured explanation of causes and effects.",
+    explanation: `Top-tier academic performance is defined by precision, clarity, and deep understanding of cause-and-effect.`,
+    topicTag: "Verification Standards & Nuance",
     difficulty: "medium",
   };
 
   const q19: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-19`,
     type: "scenario",
-    question: `[Systematic Troubleshooting] An experimental trial in ${cleanTitleStr} shows zero product formation despite correct reagent concentrations and temperature. Which diagnostic fault should be tested first?`,
+    question: `[Practical Case] In an examination testing ${cleanTitleStr}, a question asks how to implement "${d3.term}". What is the best strategy?`,
     options: [
-      `Verify whether a required cofactor, catalyst, or specific activator for "${d0.term}" is absent or denatured.`,
-      "Assume gravity has reversed and restart the trial in a vacuum.",
-      "Double the volume of water without checking chemical purity.",
-      "Conclude that the laws of physics do not apply to this sample.",
+      `Detail the specific step-by-step methodology, state relevant constraints, and explain expected outcomes.`,
+      "State only the definition and skip the implementation details.",
+      "Provide an example from an unrelated subject.",
+      "State that implementation cannot be explained in words.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `Verify whether a required cofactor, catalyst, or specific activator for "${d0.term}" is absent or denatured.`,
-    explanation: `Systematic troubleshooting begins by isolating essential catalytic cofactors and activation prerequisites.`,
-    topicTag: "Systematic Troubleshooting",
+    correctAnswer: `Detail the specific step-by-step methodology, state relevant constraints, and explain expected outcomes.`,
+    explanation: `Applied exam questions require step-by-step methodology and clear constraint awareness.`,
+    topicTag: "Implementation & Strategy",
     difficulty: "medium",
   };
 
   const q20: QuizQuestion = {
     id: `diag-${materialId}-v${variant}-20`,
     type: "scenario",
-    question: `[Diagnostic Synthesis] In an advanced exam assessing ${cleanTitleStr}, which diagnostic indicator proves that a student has mastered the holistic interaction between "${d0.term}", "${d2.term}", and "${d5.term}"?`,
+    question: `[Comprehensive Diagnostic] Which diagnostic indicator confirms that a learner has achieved mastery of ${cleanTitleStr}?`,
     options: [
-      `The ability to quantitatively predict system fluxes, state shifts, and energy conservation under novel experimental disturbances.`,
-      "Rote recitation of isolated textbook terms without understanding causal mechanisms.",
-      "Assuming that closed systems can create new energy during rapid state shifts.",
-      "Believing that equilibrium means reactions have completely stopped moving.",
+      `The ability to apply principles to unfamiliar scenarios, troubleshoot ambiguities, and explain mechanisms clearly.`,
+      "Rote memorization of isolated vocabulary without understanding context.",
+      "Believing that subject rules apply identically regardless of context.",
+      "Inability to explain why a given conclusion was reached.",
     ].sort(() => 0.5 - Math.random()),
-    correctAnswer: `The ability to quantitatively predict system fluxes, state shifts, and energy conservation under novel experimental disturbances.`,
-    explanation: `Diagnostic synthesis represents peak cognitive mastery: integrating multiple core concepts to troubleshoot, diagnose, and calculate complex system behaviors.`,
-    topicTag: "High-Yield Diagnostic Synthesis",
+    correctAnswer: `The ability to apply principles to unfamiliar scenarios, troubleshoot ambiguities, and explain mechanisms clearly.`,
+    explanation: `True conceptual mastery is proven by the ability to apply principles to novel scenarios with clarity and precision.`,
+    topicTag: "Comprehensive Diagnostic Mastery",
     difficulty: "hard",
   };
 
@@ -1271,64 +1271,64 @@ export function generateFallbackStudyPackage(
   };
 
   // 5. Step Lesson (6 rich, pristine academic lessons with 5 questions each)
-  const d0 = definitions[0] || { term: "Core Principle", definition: "The fundamental mechanism governing system behaviors." };
-  const d1 = definitions[1] || { term: "Activation Energy", definition: "The minimum kinetic barrier required to initiate forward reaction." };
-  const d2 = definitions[2] || { term: "Dynamic Equilibrium", definition: "A state where opposing transformations proceed at equal rates." };
-  const d3 = definitions[3] || { term: "Le Chatelier's Principle", definition: "How an equilibrium shifts to counteract external perturbations." };
-  const d4 = definitions[4] || { term: "Catalysis & Pathways", definition: "Accelerating rate by lowering the energetic barrier." };
+  const d0 = definitions[0] || { term: "Core Principle", definition: `The primary conceptual framework governing ${title}.` };
+  const d1 = definitions[1] || { term: "Methodology & Approach", definition: `The systematic techniques and rules applied in ${title}.` };
+  const d2 = definitions[2] || { term: "Operational Criteria", definition: `The standards used to evaluate validity and performance in ${title}.` };
+  const d3 = definitions[3] || { term: "Contextual Framework", definition: `The boundary conditions and scenarios where ${title} applies.` };
+  const d4 = definitions[4] || { term: "Synthesis & Application", definition: `Integrating principles of ${title} to solve real-world problem sets.` };
 
   const stepLessons: LessonStep[] = [
     {
       lessonNumber: 1,
       title: "Foundational Principles & Core Framework",
       subtitle: `Unpacking why ${title} matters, primary mechanisms, and foundational terminology`,
-      content: `Welcome to Lesson 1 of **${title}**.\n\n### Foundational Principle: ${d0.term}\n${d0.definition}\n\n### Why This Concept Matters\nEvery subject has a few anchor ideas that make everything else click. In this course, mastering this foundational principle gives you the mental model needed to understand how macroscopic behaviors emerge from fundamental interactions.\n\n### Key Concepts to Anchor:\n• **${d0.term}**: ${d0.definition}\n• **${d1.term}**: ${d1.definition}\n• **Equilibrium & Conservation**: System states stay balanced until external work or disturbances shift the threshold.\n\nTake a moment to review this core definition before tackling the 5 lesson questions below.`,
-      analogy: "Think of this foundation like the rules of gravity: once you understand the basic attraction between masses, planetary orbits and ocean tides both make intuitive sense.",
-      keyTerms: [d0.term, d1.term, "Conservation Law"],
+      content: `Welcome to Lesson 1 of **${title}**.\n\n### Foundational Principle: ${d0.term}\n${d0.definition}\n\n### Why This Concept Matters\nEvery subject has anchor ideas that establish the foundation for advanced mastery. In ${title}, understanding this foundational principle gives you the mental model needed to analyze scenarios, interpret evidence, and answer exam questions with precision.\n\n### Key Concepts to Anchor:\n• **${d0.term}**: ${d0.definition}\n• **${d1.term}**: ${d1.definition}\n• **Analytical Scope**: Systematic examination of underlying rules before tackling complex scenarios.\n\nTake a moment to review this core definition before tackling the 5 lesson questions below.`,
+      analogy: `Think of this foundation like building the structural frame of a building: once the frame is sound, adding the details and specific applications is straightforward and stable.`,
+      keyTerms: [d0.term, d1.term, "Core Framework"],
       knowledgeCheck: create5QuestionsForLesson(1, "Foundations & Overview", title)[0],
       questions: create5QuestionsForLesson(1, "Foundations & Overview", title),
       completed: false,
     },
     {
       lessonNumber: 2,
-      title: "Operational Mechanisms & Step-by-Step Dynamics",
-      subtitle: "Tracing step-by-step pathways, energy transitions, and regulatory feedback loops",
-      content: `In Lesson 2, we build upon our foundation by examining how **${title}** operates dynamically over time.\n\n### 3-Stage Operational Pathway\n1. **Initialization & Activation**: Reactants or inputs acquire sufficient activation energy (${d1.term}) to overcome baseline resistance.\n2. **Transition & Interaction**: Intermediates form along the lowest-energy pathway, mediated by catalysts or driving gradients.\n3. **Resolution & Equilibrium**: Products stabilize, and the system reaches ${d2.term}.\n\n### The Bottleneck Principle\nIn any multi-step process, the overall throughput cannot exceed the speed of the slowest individual step (the rate-determining step). Identifying this bottleneck is the fastest way to solve complex exam scenarios.`,
-      analogy: "Like an hourglass or multi-stage assembly line: no matter how wide the upper chamber is, the flow rate is strictly dictated by the narrowest neck.",
-      keyTerms: ["Activation Energy", "Rate-Determining Step", "Dynamic Equilibrium"],
-      knowledgeCheck: create5QuestionsForLesson(2, "Process Mechanics", title)[0],
-      questions: create5QuestionsForLesson(2, "Process Mechanics", title),
+      title: "Operational Methodologies & Step-by-Step Analysis",
+      subtitle: "Tracing step-by-step pathways, systematic rules, and analytical approaches",
+      content: `In Lesson 2, we build upon our foundation by examining how **${title}** is applied systematically in practice.\n\n### 3-Stage Analytical Pathway\n1. **Identification & Context**: Define the problem, isolate key variables, and identify relevant governing principles (${d0.term}).\n2. **Execution & Translation**: Apply systematic methodology (${d1.term}) to process information and test potential solutions.\n3. **Evaluation & Verification**: Verify findings against established standards (${d2.term}).\n\n### The Precision Principle\nIn academic analysis, accuracy in defining terms and applying rules prevents careless exam errors. Maintaining clarity at each step ensures sound conclusions.`,
+      analogy: "Like navigating using a detailed map: knowing both your current coordinates and the destination route prevents you from taking misleading detours.",
+      keyTerms: [d1.term, "Analytical Method", "Systematic Workflow"],
+      knowledgeCheck: create5QuestionsForLesson(2, "Operational Methods", title)[0],
+      questions: create5QuestionsForLesson(2, "Operational Methods", title),
       completed: false,
     },
     {
       lessonNumber: 3,
-      title: "Governing Laws & Boundary Conditions",
-      subtitle: "Understanding constraints, equilibrium shifts, and mathematical relationships",
-      content: `Every scientific process operates within physical boundaries. In Lesson 3, we examine what happens when environmental variables shift.\n\n### ${d3.term}\n${d3.definition}\n\n### Critical Boundary Conditions\n• **Temperature Sensitivity**: Increasing thermal energy increases kinetic collisions, altering rate constants.\n• **Concentration Effects**: Shifting input ratios changes the reaction quotient relative to the equilibrium constant.\n• **Limits of Validity**: Idealized models hold only within defined ranges of concentration and pressure.`,
-      analogy: "Like a balance beam or seesaw: placing extra weight on one side forces the opposite side to rise until a new balance is restored.",
-      keyTerms: [d3.term, "Boundary Conditions", "Thermal Sensitivity"],
-      knowledgeCheck: create5QuestionsForLesson(3, "Governing Laws", title)[0],
-      questions: create5QuestionsForLesson(3, "Governing Laws", title),
+      title: "Governing Rules & Contextual Boundaries",
+      subtitle: "Understanding constraints, boundary conditions, and subject-specific rules",
+      content: `Every subject operates within defined rules and contextual boundaries. In Lesson 3, we examine how context influences the interpretation of **${title}**.\n\n### ${d3.term}\n${d3.definition}\n\n### Critical Contextual Rules\n• **Scope of Validity**: Theoretical models and rules apply within specified conditions and assumptions.\n• **Nuance & Distinction**: Distinguishing between closely related concepts prevents overgeneralization.\n• **Evidence Requirements**: High-level academic writing requires backing every claim with clear explanations or references.`,
+      analogy: "Like speed limits on different types of roads: the rules of the road adapt logically depending on whether you are on a highway or in a school zone.",
+      keyTerms: [d3.term, "Boundary Rules", "Contextual Scope"],
+      knowledgeCheck: create5QuestionsForLesson(3, "Governing Rules", title)[0],
+      questions: create5QuestionsForLesson(3, "Governing Rules", title),
       completed: false,
     },
     {
       lessonNumber: 4,
-      title: "Step-by-Step Problem Solving & Practical Scenarios",
-      subtitle: "Mastering calculations, exam heuristics, and avoiding typical student mistakes",
-      content: `Lesson 4 bridges theory and practice. How do you tackle exam problems testing **${title}** with speed and accuracy?\n\n### The G.U.E.S.S. Problem-Solving Protocol\n1. **G - Given**: Extract all explicit numbers, units, and conditions stated in the question prompt.\n2. **U - Unknown**: Explicitly define what variable you are asked to solve for.\n3. **E - Equation**: Select the governing law or rate equation connecting knowns to unknowns.\n4. **S - Substitute**: Insert numerical values with appropriate unit conversions.\n5. **S - Solve & Sanity Check**: Verify whether the magnitude and sign of your answer make physical sense.\n\n### Common Exam Trap to Avoid\nNever confuse *rate* (how fast a process occurs) with *equilibrium yield* (how much product is formed at the end). A catalyst speeds up the rate without changing the final equilibrium position!`,
-      analogy: "Like an experienced pilot running a pre-flight checklist: systematic verification eliminates 90% of careless calculation errors.",
-      keyTerms: ["Problem Solving", "Unit Analysis", "Equilibrium vs Rate"],
+      title: "Step-by-Step Problem Solving & Diagnostic Scenarios",
+      subtitle: "Mastering practical heuristics, exam workflows, and avoiding common pitfalls",
+      content: `Lesson 4 bridges theory and practice. How do you tackle exam questions testing **${title}** with speed and accuracy?\n\n### The 4-Step Exam Solution Protocol\n1. **Inspect**: Read the question prompt carefully and identify what specific concept is being tested.\n2. **Define**: State the relevant definition or rule (${d0.term} / ${d1.term}) before writing the response.\n3. **Apply**: Connect the specific details of the prompt to the governing principles.\n4. **Review**: Check for clarity, logical flow, and ensure all parts of the question have been addressed.\n\n### Common Exam Trap to Avoid\nNever rely on superficial keyword matching without verifying whether the meaning fits the specific context of the question.`,
+      analogy: "Like a professional editor proofreading a text: a systematic pass-by-pass review catches ambiguities before final submission.",
+      keyTerms: ["Problem Solving", "Exam Protocol", "Diagnostic Analysis"],
       knowledgeCheck: create5QuestionsForLesson(4, "Problem Solving", title)[0],
       questions: create5QuestionsForLesson(4, "Problem Solving", title),
       completed: false,
     },
     {
       lessonNumber: 5,
-      title: "Comparative Analysis & Real-World Applications",
-      subtitle: "Exploring laboratory applications, industrial uses, and biological systems",
-      content: `In Lesson 5, we see how the principles of **${title}** apply outside the textbook in real-world technology and natural phenomena.\n\n### Real-World Case Studies\n• **Industrial Synthesis**: Maximizing production efficiency by optimizing temperature and pressure under kinetic constraints.\n• **Biological Homeostasis**: How living cells maintain delicate internal stability despite fluctuating external environments.\n• **Material & Energy Efficiency**: Minimizing activation barriers (${d4.term}) to conserve energy and reduce waste.\n\n### Comparative Insights\nCompare spontaneous vs. non-spontaneous pathways: processes with negative free energy release proceed spontaneously, while non-spontaneous processes require coupled external energy input.`,
-      analogy: "Think of an enzymatic reaction in digestion: your body carries out chemical transformations at 37°C that would otherwise require high industrial temperatures, purely through biological catalysis.",
-      keyTerms: [d4.term, "Industrial Synthesis", "Spontaneity"],
+      title: "Comparative Analysis & Real-World Case Studies",
+      subtitle: "Exploring practical implementations, field applications, and case studies",
+      content: `In Lesson 5, we examine how the principles of **${title}** are applied in professional, academic, and practical settings.\n\n### Real-World Case Studies\n• **Structured Analysis**: Applying ${d4.term} to evaluate complex case studies and problem sets.\n• **Contextual Adaptation**: Modifying strategies to meet different project, research, or organizational demands.\n• **Quality & Standards**: Using ${d2.term} as an objective benchmark for evaluation.\n\n### Comparative Insights\nCompare baseline approaches with advanced strategies to understand which methods yield the highest clarity, efficiency, and accuracy.`,
+      analogy: "Like an architect adapting blueprints to different terrains: the underlying engineering principles remain solid while the implementation flexes to fit the landscape.",
+      keyTerms: [d4.term, "Real-World Application", "Case Studies"],
       knowledgeCheck: create5QuestionsForLesson(5, "Applications & Case Studies", title)[0],
       questions: create5QuestionsForLesson(5, "Applications & Case Studies", title),
       completed: false,
@@ -1336,10 +1336,10 @@ export function generateFallbackStudyPackage(
     {
       lessonNumber: 6,
       title: "Synthesis & Comprehensive Mastery",
-      subtitle: "Connecting all micro-mechanisms into a unified big-picture mental framework",
-      content: `Congratulations on reaching Lesson 6 of **${title}**! Here, we synthesize all concepts:\n\n1. Foundational terminology and definitions\n2. Sequential dynamics and energy pathways\n3. Limiting factors and boundary constraints\n4. Equilibrium dynamics and rate adjustments\n5. Real-world scenario problem solving\n\nConclude your study by passing the final 5 mastery questions below!`,
-      analogy: "Like hearing an entire symphony after practicing each instrument's individual notes separately.",
-      keyTerms: ["Synthesis", "Unified Model", "Systemic Mastery", "Exam Preparedness"],
+      subtitle: "Connecting all core concepts into a unified mental framework",
+      content: `Congratulations on reaching Lesson 6 of **${title}**! Here, we synthesize all concepts:\n\n1. Foundational terminology and definitions\n2. Step-by-step methodologies and analytical frameworks\n3. Boundary rules and contextual nuances\n4. Diagnostic problem-solving protocols\n5. Practical applications and real-world case analysis\n\nConclude your study by passing the final 5 mastery questions below!`,
+      analogy: "Like assembling a puzzle: each individual piece now joins together into a clear, complete, and memorable picture.",
+      keyTerms: ["Synthesis", "Unified Model", "Mastery", "Exam Preparedness"],
       knowledgeCheck: create5QuestionsForLesson(6, "Comprehensive Mastery", title)[0],
       questions: create5QuestionsForLesson(6, "Comprehensive Mastery", title),
       completed: false,

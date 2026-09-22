@@ -2837,20 +2837,42 @@ function getUserStoragePath(userId?: string) {
   return path.join(STORAGE_DIR, `data_${safeId}.json`);
 }
 
+async function writeJsonFileAtomic(filePath: string, data: any) {
+  const tempPath = `${filePath}.tmp.${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  await fs.promises.writeFile(tempPath, JSON.stringify(data, null, 2), "utf-8");
+  await fs.promises.rename(tempPath, filePath);
+}
+
+async function readJsonFileSafe(filePath: string): Promise<any | null> {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  try {
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    if (!content || !content.trim()) {
+      return null;
+    }
+    return JSON.parse(content);
+  } catch (err) {
+    console.warn(`[Storage] Failed to parse JSON from ${filePath}, recovering gracefully:`, err);
+    return null;
+  }
+}
+
 // Sync/Save user state permanently
 app.post("/api/storage/sync", async (req, res) => {
   try {
-    const { userId, data } = req.body;
+    const { userId, data } = req.body || {};
     if (!data) {
       return res.status(400).json({ success: false, error: "No data payload provided" });
     }
     await ensureStorageDir();
     const filePath = getUserStoragePath(userId);
-    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
+    await writeJsonFileAtomic(filePath, data);
     return res.json({ success: true, timestamp: new Date().toISOString() });
   } catch (err: any) {
     console.error("Storage sync failed:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err?.message || "Storage sync failed" });
   }
 });
 
@@ -2859,40 +2881,35 @@ app.get("/api/storage/load", async (req, res) => {
   try {
     const userId = (req.query.userId as string) || "default_user";
     const filePath = getUserStoragePath(userId);
-    if (!fs.existsSync(filePath)) {
-      return res.json({ success: true, data: null });
-    }
-    const content = await fs.promises.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(content);
+    const parsed = await readJsonFileSafe(filePath);
     return res.json({ success: true, data: parsed });
   } catch (err: any) {
     console.error("Storage load failed:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err?.message || "Storage load failed" });
   }
 });
 
 // Delete specific material from persistent storage
 app.post("/api/storage/delete-material", async (req, res) => {
   try {
-    const { userId, materialId } = req.body;
-    const filePath = getUserStoragePath(userId);
-    if (!fs.existsSync(filePath)) {
+    const { userId, materialId } = req.body || {};
+    if (!materialId) {
       return res.json({ success: true });
     }
-    const content = await fs.promises.readFile(filePath, "utf-8");
-    const parsed = JSON.parse(content);
+    const filePath = getUserStoragePath(userId);
+    const parsed = await readJsonFileSafe(filePath);
     if (parsed && Array.isArray(parsed.materials)) {
       parsed.materials = parsed.materials.filter((m: any) => m.id !== materialId);
       if (parsed.notes && parsed.notes[materialId]) delete parsed.notes[materialId];
       if (parsed.memorisePacks && parsed.memorisePacks[materialId]) delete parsed.memorisePacks[materialId];
       if (parsed.quizzes && parsed.quizzes[materialId]) delete parsed.quizzes[materialId];
       if (parsed.lessons && parsed.lessons[materialId]) delete parsed.lessons[materialId];
-      await fs.promises.writeFile(filePath, JSON.stringify(parsed, null, 2), "utf-8");
+      await writeJsonFileAtomic(filePath, parsed);
     }
     return res.json({ success: true });
   } catch (err: any) {
-    console.error("Delete material storage failed:", err);
-    return res.status(500).json({ success: false, error: err.message });
+    console.warn("Delete material storage warning:", err);
+    return res.json({ success: true, warning: err?.message });
   }
 });
 

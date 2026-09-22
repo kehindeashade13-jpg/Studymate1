@@ -31,6 +31,8 @@ import {
   extractCourseCode,
   detectSubjectFromCodeOrTitle,
 } from "../utils/studyTransformer";
+import { extractTextFromFileClient } from "../utils/clientDocumentExtractor";
+import { callGeminiApi } from "../utils/geminiClient";
 import {
   uploadStudyMaterialFile,
   saveMaterialToDatabase,
@@ -216,76 +218,92 @@ export const AddMaterialModal: React.FC = () => {
     setIsExtractingDoc(true);
     setContent(`Extracting readable lecture notes and academic content from "${fileName}"...`);
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      // Guard against stale reader callbacks if another file was chosen in the meantime
-      if (currentUploadIdRef.current !== uploadId) return;
-
-      const dataUrl = event.target?.result as string;
-      setUploadedFileUrl(dataUrl);
-
-      if (file.type.startsWith("image/")) {
-        setImagePreview(dataUrl);
-      }
-
+    // 1. Attempt rapid client-side extraction first (supports PDF, DOCX, TXT, MD, JSON in-browser)
+    (async () => {
       try {
-        console.log(`[API REQUEST]`, {
-          filename: fileName,
-          fileId: uploadId,
-          timestamp: new Date().toISOString(),
-        });
-
-        const res = await fetch("/api/extract-document", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            base64: dataUrl,
-            mimeType: file.type || (fileName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream"),
-            fileName,
-          }),
-        });
-
-        // Guard against race conditions where another upload started during the fetch
+        const clientText = await extractTextFromFileClient(file);
         if (currentUploadIdRef.current !== uploadId) return;
 
-        const json = await res.json();
-        if (currentUploadIdRef.current !== uploadId) return;
-
-        console.log(`[API RESPONSE]`, {
-          filename: fileName,
-          fileId: uploadId,
-          content: (json?.text || "").substring(0, 100),
-          timestamp: new Date().toISOString(),
-        });
-
-        if (json?.success && json.text && json.text.trim().length > 15) {
-          const cleanText = cleanToNaturalEnglish(json.text);
-          setContent(cleanText);
-          const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
+        if (clientText && clientText.trim().length > 20) {
+          const cleanClient = cleanToNaturalEnglish(clientText);
+          setContent(cleanClient);
+          const codeFromContent = extractCourseCode(fileName, cleanClient, cleanDocTitle);
           if (codeFromContent) {
             setCourseCode(codeFromContent);
-            setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
+            setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanClient));
           } else {
-            setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle, cleanText));
+            setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle, cleanClient));
           }
-        } else {
+          setIsExtractingDoc(false);
+          return;
+        }
+      } catch (clientErr) {
+        console.warn("[Client Extract Fallback]", clientErr);
+      }
+
+      // 2. If client extraction needed fallback or OCR, proceed with FileReader and API
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        if (currentUploadIdRef.current !== uploadId) return;
+
+        const dataUrl = event.target?.result as string;
+        setUploadedFileUrl(dataUrl);
+
+        if (file.type.startsWith("image/")) {
+          setImagePreview(dataUrl);
+        }
+
+        try {
+          console.log(`[API REQUEST]`, {
+            filename: fileName,
+            fileId: uploadId,
+            timestamp: new Date().toISOString(),
+          });
+
+          const res = await fetch("/api/extract-document", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              base64: dataUrl,
+              mimeType: file.type || (fileName.endsWith(".pdf") ? "application/pdf" : "application/octet-stream"),
+              fileName,
+            }),
+          });
+
+          if (currentUploadIdRef.current !== uploadId) return;
+
+          const json = await res.json();
+          if (currentUploadIdRef.current !== uploadId) return;
+
+          if (json?.success && json.text && json.text.trim().length > 15) {
+            const cleanText = cleanToNaturalEnglish(json.text);
+            setContent(cleanText);
+            const codeFromContent = extractCourseCode(fileName, cleanText, cleanDocTitle);
+            if (codeFromContent) {
+              setCourseCode(codeFromContent);
+              setSubject(detectSubjectFromCodeOrTitle(codeFromContent, cleanText));
+            } else {
+              setSubject(detectSubjectFromCodeOrTitle(cleanDocTitle, cleanText));
+            }
+          } else {
+            setContent(
+              `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
+            );
+          }
+        } catch (extractErr) {
+          if (currentUploadIdRef.current !== uploadId) return;
+          console.warn("Document extraction error:", extractErr);
           setContent(
             `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
           );
+        } finally {
+          if (currentUploadIdRef.current === uploadId) {
+            setIsExtractingDoc(false);
+          }
         }
-      } catch (extractErr) {
-        if (currentUploadIdRef.current !== uploadId) return;
-        console.warn("Document extraction error:", extractErr);
-        setContent(
-          `# ${cleanDocTitle}\n\nComprehensive academic lecture notes for ${cleanDocTitle}. Covering foundational principles, operational mechanisms, governing laws, worked exam examples, and diagnostic practice questions.`
-        );
-      } finally {
-        if (currentUploadIdRef.current === uploadId) {
-          setIsExtractingDoc(false);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    })();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -458,7 +476,7 @@ export const AddMaterialModal: React.FC = () => {
 
     try {
       // 2. Fetch material analysis with a safety timeout
-      const rawAnalyzeData = await safeFetchJson<any>(
+      const rawAnalyzeData = await callGeminiApi<any>(
         "/api/gemini/analyze",
         {
           title: finalTitle,
@@ -489,13 +507,13 @@ export const AddMaterialModal: React.FC = () => {
 
       // 3. Fetch specialized study assets in two staggered pairs to prevent rate-limit concurrency spikes
       const [rawNotesRes, rawFlashcardsRes] = await Promise.all([
-        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 25000),
-        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 25000),
+        callGeminiApi<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 25000),
+        callGeminiApi<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 25000),
       ]);
 
       const [rawQuizRes, rawLessonRes] = await Promise.all([
-        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 25000),
-        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 25000),
+        callGeminiApi<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 25000),
+        callGeminiApi<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 25000),
       ]);
 
       const notesRes = rawNotesRes?.data || rawNotesRes;

@@ -360,6 +360,29 @@ export async function fetchMaterialsFromSupabase() {
 }
 
 /**
+ * Deletes a study material and its linked records from Supabase
+ */
+export async function deleteMaterialFromDatabase(materialId) {
+  if (!isSupabaseConfigured() || !materialId) {
+    return { success: true, isLocalFallback: true };
+  }
+  try {
+    const { error } = await supabase
+      .from("study_materials")
+      .delete()
+      .eq("id", materialId);
+    if (error) {
+      console.warn("[Supabase DB] deleteMaterial error:", error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    console.warn("[Supabase DB] deleteMaterial exception:", err);
+    return { success: true, isLocalFallback: true, error: err?.message };
+  }
+}
+
+/**
  * Returns clean SQL statements for users to set up their Supabase tables in SQL Editor.
  */
 export function getSupabaseTablesSql() {

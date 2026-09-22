@@ -20,6 +20,7 @@ import {
   SourceType,
 } from "../types";
 import { cleanTitle, sanitizeMaterial, isGarbledText, generateDiagnosticQuestions } from "../utils/studyTransformer";
+import { deleteMaterialFromDatabase } from "../supabase";
 import {
   initialUser,
   initialMaterials,
@@ -641,6 +642,9 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (activeMaterial?.id === id) {
       setActiveMaterial(materials.find((m) => m.id !== id) || null);
     }
+    // Delete from Supabase Database (if configured)
+    deleteMaterialFromDatabase(id).catch((err) => console.warn("Supabase delete failed:", err));
+
     // Delete from permanent server storage
     fetch("/api/storage/delete-material", {
       method: "POST",
@@ -649,7 +653,12 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         userId: user?.id || user?.email || "default_user",
         materialId: id,
       }),
-    }).catch((err) => console.warn("Failed to delete from server storage:", err));
+    })
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json().catch(() => null);
+      })
+      .catch((err) => console.warn("Failed to delete from server storage:", err));
   };
 
   const updateMaterialProgress = (id: string, progressVal: number) => {
