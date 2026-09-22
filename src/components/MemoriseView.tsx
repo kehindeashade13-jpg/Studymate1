@@ -29,6 +29,7 @@ export const MemoriseView: React.FC = () => {
     setActiveMaterial,
     memorisePacks,
     reviewFlashcard,
+    saveGeneratedMemorise,
     triggerConfetti,
     setIsAssistantOpen,
   } = useStudy();
@@ -37,12 +38,39 @@ export const MemoriseView: React.FC = () => {
 
   // Active view sub-tab
   const [subTab, setSubTab] = useState<"flashcards" | "mnemonics" | "blanks">("flashcards");
+  const [isGeneratingFlashcards, setIsGeneratingFlashcards] = useState(false);
 
   // Flashcards state
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "unmastered">("all");
+
+  const handleGenerateFreshFlashcards = async () => {
+    if (!activeMaterial || isGeneratingFlashcards) return;
+    setIsGeneratingFlashcards(true);
+    try {
+      const res = await fetch("/api/gemini/generate-flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: activeMaterial.title,
+          text: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
+        }),
+      });
+      const data = await res.json();
+      if (data.data) {
+        saveGeneratedMemorise(activeMaterial.id, data.data);
+        triggerConfetti();
+        setCurrentCardIndex(0);
+        setIsFlipped(false);
+      }
+    } catch (err) {
+      console.error("Flashcard generation error:", err);
+    } finally {
+      setIsGeneratingFlashcards(false);
+    }
+  };
 
   // Objective Fill in Blanks state
   const [blankSelectedOption, setBlankSelectedOption] = useState<Record<number, string>>({});
@@ -335,7 +363,17 @@ export const MemoriseView: React.FC = () => {
           <h1 className="text-xl font-extrabold text-white">{activeMaterial.title}</h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={handleGenerateFreshFlashcards}
+            disabled={isGeneratingFlashcards}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+            title="Generate new active-recall flashcards using Gemini AI"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isGeneratingFlashcards ? "animate-spin" : ""}`} />
+            <span>{isGeneratingFlashcards ? "Generating with Gemini…" : "✨ Generate Flashcards"}</span>
+          </button>
+
           {subTab === "flashcards" && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-800/40 text-purple-300 text-xs font-semibold">
               <Brain className="w-4 h-4" />

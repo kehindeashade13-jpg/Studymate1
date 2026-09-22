@@ -14,6 +14,12 @@ import {
   ChevronDown,
   Layers,
   CheckCircle2,
+  Paperclip,
+  FileText,
+  Brain,
+  ListOrdered,
+  GraduationCap,
+  Zap,
 } from "lucide-react";
 import { CleanFormattedText } from "./CleanFormattedText";
 
@@ -22,7 +28,10 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   timestamp: string;
+  attachmentName?: string;
 }
+
+export type ExplanationStyle = "academic" | "eli5" | "step_by_step" | "bullets" | "socratic";
 
 export const AssistantDrawer: React.FC = () => {
   const { isAssistantOpen, setIsAssistantOpen, activeMaterial, setActiveMaterial, materials, user } = useStudy();
@@ -30,7 +39,16 @@ export const AssistantDrawer: React.FC = () => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedMatId, setSelectedMatId] = useState<string>(activeMaterial?.id || (materials[0]?.id || ""));
+  const [explanationStyle, setExplanationStyle] = useState<ExplanationStyle>("academic");
   
+  // Direct file attachment in chat
+  const [attachment, setAttachment] = useState<{
+    name: string;
+    base64: string;
+    mimeType: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   // Isolated per-material chat state
   const [messagesByMaterial, setMessagesByMaterial] = useState<Record<string, ChatMessage[]>>({});
 
@@ -56,7 +74,7 @@ export const AssistantDrawer: React.FC = () => {
         {
           id: `m-init-${mat.id}`,
           role: "assistant",
-          text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor for **${mat.title}**${mat.courseCode ? ` (${mat.courseCode})` : ""}.\n\nI have analyzed your **${mat.subject}** study material and I am ready to:\n- Provide **step-by-step concept explanations**\n- Break down **governing mechanisms & formulas**\n- Quiz you with **diagnostic exam questions**\n- Generate **custom memory mnemonics**\n\nWhat would you like to explore from "${mat.title}"?`,
+          text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor for **${mat.title}**${mat.courseCode ? ` (${mat.courseCode})` : ""}.\n\nI have read and analyzed your **${mat.subject}** study material and I am ready to:\n- 📝 **Make Summaries**: generate high-yield executive summaries\n- ❓ **Make Up Questions**: create 5 exam questions with answers\n- 🗂️ **Create Flashcards & Quizzes**: drill key concepts and formulas\n- 💡 **Explain The Way You Want**: switch between Academic, ELI5, Step-by-Step, Bullets, or Socratic!\n\nWhat would you like to explore from "${mat.title}"?`,
           timestamp: "Just now",
         },
       ];
@@ -65,7 +83,7 @@ export const AssistantDrawer: React.FC = () => {
       {
         id: "m1",
         role: "assistant",
-        text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor.\n\nUpload or select a study deck to receive personalized explanations, flashcard drills, and exam prep.`,
+        text: `Hello ${user.name}! I am your dedicated StudyMate AI Tutor.\n\nUpload or select a study deck, or attach any document below, and I'll explain it, make up questions, or generate quizzes and flashcards!`,
         timestamp: "Just now",
       },
     ];
@@ -77,14 +95,34 @@ export const AssistantDrawer: React.FC = () => {
 
   if (!isAssistantOpen) return null;
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const queryText = (textToSend || input).trim();
-    if (!queryText || loading) return;
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      setAttachment({
+        name: file.name,
+        base64: result,
+        mimeType: file.type || "application/octet-stream",
+      });
+    };
+    reader.readAsDataURL(file);
+    // Reset file input so same file can be selected again
+    e.target.value = "";
+  };
+
+  const handleSendMessage = async (textToSend?: string, actionType?: string) => {
+    const queryText = (textToSend || input).trim();
+    if ((!queryText && !attachment) || loading) return;
+
+    const activeAttachment = attachment;
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: "user",
-      text: queryText,
+      text: queryText || `[Attached: ${activeAttachment?.name}] Please analyze this document.`,
+      attachmentName: activeAttachment?.name,
       timestamp: "Just now",
     };
 
@@ -97,6 +135,7 @@ export const AssistantDrawer: React.FC = () => {
       [targetMatId]: updatedHistory,
     }));
     setInput("");
+    setAttachment(null);
     setLoading(true);
 
     try {
@@ -109,12 +148,15 @@ Key Topics: ${(mat.mainTopics || []).join(", ")}
 Definitions: ${(mat.definitions || []).slice(0, 15).map((d) => `${d.term}: ${d.definition}`).join("; ")}
 Formulas: ${(mat.formulas || []).map((f) => `${f.name}: ${f.formula}`).join("; ")}
 Potential Questions: ${(mat.potentialExamQuestions || []).slice(0, 5).join(" | ")}
-Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
+Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 12000)}`
         : "No specific file uploaded.";
 
       console.log(`[AI CONTEXT]`, {
         fileId: mat?.id || "none",
         title: mat?.title || "none",
+        style: explanationStyle,
+        action: actionType || "chat",
+        hasAttachment: !!activeAttachment,
         contentExcerpt: (mat?.rawText || mat?.content || "").substring(0, 100),
         timestamp: new Date().toISOString(),
       });
@@ -125,8 +167,11 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
         body: JSON.stringify({
           message: queryText,
           studyContext: richContext,
+          explanationStyle,
+          action: actionType || "chat",
+          attachment: activeAttachment,
           currentMaterial: mat ? { title: mat.title, subject: mat.subject, summary: mat.summary } : null,
-          history: baseHistory.slice(-4).map((m) => ({
+          history: baseHistory.slice(-5).map((m) => ({
             role: m.role === "user" ? "user" : "model",
             parts: [{ text: m.text }],
           })),
@@ -283,29 +328,119 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
           )}
         </div>
 
-        {/* Quick Prompt Chips */}
-        <div className="p-2.5 border-b border-slate-100 bg-white flex gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
+        {/* Explanation Style Selector Bar */}
+        <div className="px-4 py-2 bg-white border-b border-slate-200 flex items-center justify-between gap-1 overflow-x-auto text-[11px]">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 shrink-0 mr-1">
+            Style:
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setExplanationStyle("academic")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[10.5px] transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                explanationStyle === "academic"
+                  ? "bg-[#0A1931] text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <GraduationCap className="w-3 h-3" />
+              Academic
+            </button>
+            <button
+              onClick={() => setExplanationStyle("eli5")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[10.5px] transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                explanationStyle === "eli5"
+                  ? "bg-amber-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <Sparkles className="w-3 h-3" />
+              ELI5 (Simple)
+            </button>
+            <button
+              onClick={() => setExplanationStyle("step_by_step")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[10.5px] transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                explanationStyle === "step_by_step"
+                  ? "bg-blue-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <ListOrdered className="w-3 h-3" />
+              Step-by-Step
+            </button>
+            <button
+              onClick={() => setExplanationStyle("bullets")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[10.5px] transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                explanationStyle === "bullets"
+                  ? "bg-teal-700 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <Zap className="w-3 h-3" />
+              Bullets
+            </button>
+            <button
+              onClick={() => setExplanationStyle("socratic")}
+              className={`px-2.5 py-1 rounded-lg font-bold text-[10.5px] transition flex items-center gap-1 whitespace-nowrap cursor-pointer ${
+                explanationStyle === "socratic"
+                  ? "bg-purple-700 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <Brain className="w-3 h-3" />
+              Socratic
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Action Chips */}
+        <div className="p-2.5 border-b border-slate-100 bg-slate-50/70 flex gap-1.5 overflow-x-auto scrollbar-none text-[11px]">
           <button
             onClick={() =>
               handleSendMessage(
-                `Please give me a detailed, step-by-step explanation of the most important concept in "${currentConnectedMaterial?.title || "this file"}" and how it works.`
+                `Generate a comprehensive, structured summary of "${currentConnectedMaterial?.title || "this file"}" highlighting the core premise, key definitions, and exam takeaways.`,
+                "make_summary"
               )
             }
-            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
+            className="px-2.5 py-1 rounded-xl bg-white hover:bg-blue-50 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-            <span>Deep Explanation</span>
+            <FileText className="w-3.5 h-3.5 text-blue-600" />
+            <span>📝 Make Summary</span>
           </button>
           <button
             onClick={() =>
               handleSendMessage(
-                `Quiz me on a high-yield exam question from "${currentConnectedMaterial?.title || "my uploaded material"}".`
+                `Make up 5 challenging examination questions based on "${currentConnectedMaterial?.title || "my uploaded material"}", complete with 4 multiple choice options, correct answer keys, and diagnostic rationale.`,
+                "make_questions"
               )
             }
-            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
+            className="px-2.5 py-1 rounded-xl bg-white hover:bg-emerald-50 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-            <span>Exam Practice Quiz</span>
+            <HelpCircle className="w-3.5 h-3.5 text-emerald-600" />
+            <span>❓ Make Questions</span>
+          </button>
+          <button
+            onClick={() =>
+              handleSendMessage(
+                `Generate 5 high-yield flashcard pairs from "${currentConnectedMaterial?.title || "my file"}" with clear Question, Answer, and Memory Anchor.`,
+                "make_flashcards"
+              )
+            }
+            className="px-2.5 py-1 rounded-xl bg-white hover:bg-purple-50 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
+          >
+            <Layers className="w-3.5 h-3.5 text-purple-600" />
+            <span>🗂️ Flashcards</span>
+          </button>
+          <button
+            onClick={() =>
+              handleSendMessage(
+                `Quiz me interactively on "${currentConnectedMaterial?.title || "my uploaded material"}"! Ask me question 1 and wait for my response before giving the answer.`,
+                "make_quiz"
+              )
+            }
+            className="px-2.5 py-1 rounded-xl bg-white hover:bg-amber-50 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+            <span>🎯 Quiz Me</span>
           </button>
           <button
             onClick={() =>
@@ -313,10 +448,10 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
                 `Invent a memorable mnemonic to help me retain the key steps or terms in "${currentConnectedMaterial?.title || "this document"}".`
               )
             }
-            className="px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
+            className="px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-[#0A1931] whitespace-nowrap transition cursor-pointer flex items-center gap-1 border border-slate-200 font-semibold shadow-2xs"
           >
-            <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-            <span>Memory Mnemonic</span>
+            <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+            <span>🧠 Mnemonic</span>
           </button>
         </div>
 
@@ -372,6 +507,25 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
 
         {/* Input Bar */}
         <div className="p-3.5 border-t border-slate-200 bg-white">
+          {/* Attachment Preview Chip */}
+          {attachment && (
+            <div className="mb-2 p-2 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate">
+                <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                <span className="font-bold truncate text-[11px]">{attachment.name}</span>
+                <span className="text-[10px] text-blue-500 shrink-0">(Attached for Gemini)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                className="p-1 rounded-lg text-blue-600 hover:bg-blue-100 transition cursor-pointer"
+                title="Remove attachment"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -379,17 +533,35 @@ Document Excerpt / Notes: ${(mat.rawText || mat.content || "").slice(0, 8000)}`
             }}
             className="flex items-center gap-2"
           >
+            {/* Hidden file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+              accept=".pdf,.docx,.doc,.txt,.md,.png,.jpg,.jpeg,.webp"
+            />
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2.5 rounded-xl border border-slate-300 hover:border-[#0A1931] hover:bg-slate-50 text-slate-600 hover:text-[#0A1931] transition cursor-pointer flex items-center justify-center shrink-0"
+              title="Attach document or image for Gemini to read"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
+
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask anything about your uploaded file..."
+              placeholder={attachment ? "Ask anything about this attachment..." : "Ask anything about your uploaded file..."}
               className="flex-1 px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-300 text-xs text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] focus:bg-white transition"
             />
             <button
               type="submit"
-              disabled={loading || !input.trim()}
-              className="p-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] disabled:opacity-40 text-white transition shadow-xs cursor-pointer flex items-center justify-center"
+              disabled={loading || (!input.trim() && !attachment)}
+              className="p-2.5 rounded-xl bg-[#0A1931] hover:bg-[#1B2A4A] disabled:opacity-40 text-white transition shadow-xs cursor-pointer flex items-center justify-center shrink-0"
               title="Send to Tutor"
             >
               <Send className="w-4 h-4" />

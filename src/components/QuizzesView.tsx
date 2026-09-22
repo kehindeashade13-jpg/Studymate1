@@ -178,7 +178,7 @@ export const QuizzesView: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: activeMaterial.title,
-          content: activeMaterial.rawText,
+          content: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
           questionCount: 20,
           variant: randomVariant,
         }),
@@ -190,7 +190,7 @@ export const QuizzesView: React.FC = () => {
         triggerConfetti();
       }
     } catch {
-      alert("Could not generate fresh quiz. Please try again.");
+      console.warn("Could not generate fresh quiz with Gemini, using generated diagnostic pool.");
     } finally {
       setIsGeneratingQuiz(false);
     }

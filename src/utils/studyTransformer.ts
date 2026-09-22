@@ -217,28 +217,26 @@ export function cleanToNaturalEnglish(text: string): string {
     }
   }
 
-  // 3. Filter out lines that are binary junk or have no letters
+  // 3. Filter out lines that are actual binary junk or PDF container artifacts
   const lines = cleaned.split("\n");
   const filteredLines = lines.filter((l) => {
     const trimmed = l.trim();
     if (!trimmed) return false;
-    if (!/[a-zA-Z]/.test(trimmed)) return false;
-    const normalChars = trimmed.replace(/[^a-zA-Z0-9\s.,?!'"\-:;()]/g, "");
-    if (normalChars.length / trimmed.length < 0.65) return false;
+    // Discard low-level binary control codes
+    if (/[\x00-\x08\x0E-\x1F]/.test(trimmed)) return false;
+    // Discard PDF container markers
+    if (/^(stream|endstream|xref|trailer|\d+\s+\d+\s+obj|endobj|startxref)$/i.test(trimmed)) return false;
     return true;
   });
 
-  return filteredLines
+  const result = (filteredLines.length > 0 ? filteredLines : lines)
     .join("\n")
-    .replace(/```[a-zA-Z]*\n?([\s\S]*?)```/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
     .replace(/\[Study material image loaded[^\]]*\]/gi, "")
     .replace(/\[Audio Lecture Transcription[^\]]*\]/gi, "")
-    .replace(/"[a-zA-Z0-9_-]+"\s*:\s*"/g, "")
-    .replace(/^#+\s+/gm, "")
-    .replace(/\*{1,2}([^*]+)\*{1,2}/g, "$1")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+
+  return result || cleaned.trim();
 }
 
 // Generate 5 rigorous, distinct questions for any lesson

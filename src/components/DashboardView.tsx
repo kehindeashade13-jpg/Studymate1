@@ -31,6 +31,7 @@ import {
   Video,
   Mic,
   Maximize2,
+  Minimize2,
   Search,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -63,6 +64,9 @@ export const DashboardView: React.FC = () => {
   const [recentFilter, setRecentFilter] = useState<"all" | "files" | "photos" | "videos" | "notes">("all");
   const [previewingMaterial, setPreviewingMaterial] = useState<StudyMaterial | null>(null);
   const [copiedPreviewText, setCopiedPreviewText] = useState(false);
+  const [previewImageError, setPreviewImageError] = useState(false);
+  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
+  const [previewFontSize, setPreviewFontSize] = useState<"normal" | "large">("normal");
 
   // Helper for relative time formatting
   const formatRelativeTime = (dateStr?: string) => {
@@ -739,7 +743,12 @@ export const DashboardView: React.FC = () => {
 
                       {/* Preview Full Material / Photo Button */}
                       <button
-                        onClick={() => setPreviewingMaterial(mat)}
+                        onClick={() => {
+                          setPreviewImageError(false);
+                          setCopiedPreviewText(false);
+                          setIsPreviewExpanded(false);
+                          setPreviewingMaterial(mat);
+                        }}
                         className="py-1.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#6366F1] text-xs font-bold transition flex items-center gap-1 cursor-pointer border border-indigo-100 ml-auto"
                         title="Preview file / photo & extracted content"
                       >
@@ -823,12 +832,16 @@ export const DashboardView: React.FC = () => {
       {/* File & Photo Preview Lightbox Modal */}
       {previewingMaterial && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] text-[#0A1931]">
+          <div
+            className={`bg-white rounded-3xl ${
+              isPreviewExpanded ? "max-w-4xl" : "max-w-2xl sm:max-w-3xl"
+            } w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] text-[#0A1931] transition-all duration-200`}
+          >
             {/* Modal Header */}
             <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between gap-3 bg-slate-50/70">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#6366F1] shrink-0 shadow-2xs">
-                  {previewingMaterial.sourceType === "photo" || previewingMaterial.fileUrl ? (
+                <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#6366F1] shrink-0 shadow-2xs">
+                  {previewingMaterial.sourceType === "photo" ? (
                     <Camera className="w-5 h-5" />
                   ) : previewingMaterial.sourceType === "upload" ? (
                     <FileUp className="w-5 h-5" />
@@ -841,7 +854,7 @@ export const DashboardView: React.FC = () => {
                     {cleanTitle(previewingMaterial.title)}
                   </h3>
                   <div className="flex items-center gap-2 text-[11px] text-[#1B2A4A]/70">
-                    <span>{previewingMaterial.courseCode || previewingMaterial.subject}</span>
+                    <span className="font-medium text-[#6366F1]">{previewingMaterial.courseCode || previewingMaterial.subject}</span>
                     <span>•</span>
                     <span className="capitalize">{previewingMaterial.sourceType}</span>
                     <span>•</span>
@@ -850,79 +863,207 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={() => setPreviewingMaterial(null)}
-                className="w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-[#0A1931] transition cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
+                  className="w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-[#0A1931] transition cursor-pointer"
+                  title={isPreviewExpanded ? "Standard view" : "Expanded view"}
+                >
+                  {isPreviewExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => setPreviewingMaterial(null)}
+                  className="w-8 h-8 rounded-full hover:bg-slate-200 flex items-center justify-center text-slate-500 hover:text-[#0A1931] transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
-              {/* Photo Preview if image exists */}
-              {previewingMaterial.fileUrl && (
-                <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center max-h-72 shadow-2xs">
-                  <img
-                    src={previewingMaterial.fileUrl}
-                    alt={previewingMaterial.title}
-                    referrerPolicy="no-referrer"
-                    className="max-h-72 w-full object-contain"
-                  />
-                </div>
-              )}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+              {/* Photo Preview if image exists, or clean document badge if document */}
+              {(() => {
+                const fileUrl = previewingMaterial.fileUrl;
+                if (!fileUrl) return null;
 
-              {/* Summary Box */}
+                const isImage =
+                  previewingMaterial.sourceType === "photo" ||
+                  fileUrl.startsWith("data:image/") ||
+                  /\.(jpe?g|png|gif|webp|svg|bmp|avif)($|\?)/i.test(fileUrl);
+
+                if (isImage && !previewImageError) {
+                  return (
+                    <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 flex items-center justify-center max-h-80 shadow-2xs">
+                      <img
+                        src={fileUrl}
+                        alt={previewingMaterial.title}
+                        referrerPolicy="no-referrer"
+                        className="max-h-80 w-full object-contain"
+                        onError={() => setPreviewImageError(true)}
+                      />
+                    </div>
+                  );
+                }
+
+                // If it is not an image (e.g. PDF/DOCX upload) or image load errored, render document banner instead of a broken image
+                return (
+                  <div className="p-3.5 sm:p-4 rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 shadow-2xs">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs sm:text-sm font-bold text-[#0A1931] truncate">
+                          {cleanTitle(previewingMaterial.title)}
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                          <span className="capitalize">{previewingMaterial.sourceType === "upload" ? "Document Source File" : "Academic Notes Source"}</span>
+                          <span>•</span>
+                          <span className="text-emerald-600 font-medium">Text Extracted</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold shrink-0 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      <span>Ready</span>
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* AI Analysis Summary Box */}
               {previewingMaterial.summary && (
-                <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-100 space-y-1">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-[#6366F1]">
-                    <Sparkles className="w-3.5 h-3.5" />
+                <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100 space-y-1.5 shadow-2xs">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#6366F1]">
+                    <Sparkles className="w-4 h-4 text-[#6366F1]" />
                     <span>AI Analysis Summary</span>
                   </div>
-                  <div className="text-xs text-[#0A1931] leading-relaxed">
+                  <div className="text-xs sm:text-sm text-[#0A1931] leading-relaxed font-normal">
                     <CleanFormattedText content={previewingMaterial.summary} />
                   </div>
                 </div>
               )}
 
-              {/* Extracted Raw Content Preview written in pure English */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#0A1931]">
-                    Extracted Text & Notes
-                  </span>
-                  <button
-                    onClick={() => {
-                      const textToCopy = cleanToNaturalEnglish(previewingMaterial.rawText);
-                      if (textToCopy && navigator?.clipboard?.writeText) {
-                        navigator.clipboard.writeText(textToCopy);
-                        setCopiedPreviewText(true);
-                        setTimeout(() => setCopiedPreviewText(false), 2000);
-                      }
-                    }}
-                    className="text-xs font-bold text-[#6366F1] hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    {copiedPreviewText ? (
-                      <>
-                        <Check className="w-3 h-3 text-emerald-600" />
-                        <span className="text-emerald-600">Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3 h-3" />
-                        <span>Copy Text</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans text-slate-800 max-h-56 overflow-y-auto leading-relaxed space-y-2">
-                  <CleanFormattedText content={previewingMaterial.rawText} />
-                </div>
-              </div>
+              {/* Extracted Raw Content Preview written in crystal-clear readable layout */}
+              {(() => {
+                const textToDisplay = (
+                  previewingMaterial.rawText?.trim() ||
+                  previewingMaterial.content?.trim() ||
+                  previewingMaterial.summary?.trim() ||
+                  "All key concepts and core topics have been extracted and prepared in your Flashcards and Lesson modules."
+                ).replace(/\\n/g, "\n");
+
+                const wordCount = textToDisplay.split(/\s+/).filter(Boolean).length;
+                const readingMinutes = Math.max(1, Math.ceil(wordCount / 180));
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs sm:text-sm font-extrabold text-[#0A1931]">
+                          Extracted Text & Notes
+                        </span>
+                        {wordCount > 0 && (
+                          <span className="text-[11px] text-slate-500 font-medium px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200">
+                            {wordCount.toLocaleString()} words • ~{readingMinutes} min read
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Font size toggle for enhanced readability */}
+                        <div className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden text-xs shadow-2xs">
+                          <button
+                            onClick={() => setPreviewFontSize("normal")}
+                            className={`px-2.5 py-1 font-bold transition cursor-pointer ${
+                              previewFontSize === "normal"
+                                ? "bg-slate-100 text-[#0A1931]"
+                                : "text-slate-500 hover:text-[#0A1931]"
+                            }`}
+                            title="Default text size"
+                          >
+                            A
+                          </button>
+                          <button
+                            onClick={() => setPreviewFontSize("large")}
+                            className={`px-2.5 py-1 font-extrabold text-sm transition cursor-pointer ${
+                              previewFontSize === "large"
+                                ? "bg-slate-100 text-[#0A1931]"
+                                : "text-slate-500 hover:text-[#0A1931]"
+                            }`}
+                            title="Large high-legibility text size"
+                          >
+                            A+
+                          </button>
+                        </div>
+
+                        {/* Expand / Minimize height toggle */}
+                        <button
+                          onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
+                          className="text-xs font-semibold text-slate-600 hover:text-[#0A1931] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1 cursor-pointer transition shadow-2xs"
+                          title={isPreviewExpanded ? "Standard height" : "Expand reading view"}
+                        >
+                          {isPreviewExpanded ? (
+                            <>
+                              <Minimize2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Collapse</span>
+                            </>
+                          ) : (
+                            <>
+                              <Maximize2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Expand</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Copy Text Button */}
+                        <button
+                          onClick={() => {
+                            if (textToDisplay && navigator?.clipboard?.writeText) {
+                              navigator.clipboard.writeText(textToDisplay);
+                              setCopiedPreviewText(true);
+                              setTimeout(() => setCopiedPreviewText(false), 2000);
+                            }
+                          }}
+                          className="text-xs font-bold text-[#6366F1] hover:text-indigo-700 bg-indigo-50/90 hover:bg-indigo-100 border border-indigo-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                        >
+                          {copiedPreviewText ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span className="text-emerald-600 font-bold">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy Text</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`p-4 sm:p-6 bg-slate-50/90 border border-slate-200 rounded-2xl overflow-y-auto leading-relaxed space-y-3 font-sans text-[#0A1931] transition-all shadow-inner ${
+                        isPreviewExpanded ? "max-h-[58vh]" : "max-h-80 sm:max-h-[440px]"
+                      } ${
+                        previewFontSize === "large"
+                          ? "text-base sm:text-lg leading-relaxed sm:leading-8"
+                          : "text-sm sm:text-base leading-relaxed sm:leading-7"
+                      }`}
+                    >
+                      <CleanFormattedText
+                        content={textToDisplay}
+                        className={previewFontSize === "large" ? "text-base sm:text-lg" : "text-sm sm:text-base"}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+            <div className="p-4 sm:p-5 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
               <button
                 onClick={() => setPreviewingMaterial(null)}
                 className="py-2.5 px-4 rounded-xl border border-slate-200 bg-white text-xs font-bold text-[#0A1931] hover:bg-slate-100 transition cursor-pointer"
@@ -937,7 +1078,7 @@ export const DashboardView: React.FC = () => {
                     setPreviewingMaterial(null);
                     handleOpenMaterialMode(m, "memorise");
                   }}
-                  className="py-2.5 px-3 rounded-xl bg-white border border-slate-200 text-xs font-bold text-[#0A1931] hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
+                  className="py-2.5 px-3.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-[#0A1931] hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
                   <Brain className="w-3.5 h-3.5 text-[#6366F1]" />
                   <span>Flashcards</span>

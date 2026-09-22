@@ -256,13 +256,13 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
 
           case "bullet-list": {
             return (
-              <ul key={`b-${bIdx}`} className="space-y-1.5 pl-1 my-2">
+              <ul key={`b-${bIdx}`} className="space-y-2 pl-1 my-2">
                 {block.items.map((item, iIdx) => (
                   <li
                     key={`li-${bIdx}-${iIdx}`}
-                    className="flex items-start gap-2.5 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300"
+                    className="flex items-start gap-2.5 text-inherit leading-relaxed"
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400 mt-2 shrink-0" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 shrink-0" />
                     <span className="flex-1 break-words">
                       {parseInlineSegments(item).map((seg, sIdx) =>
                         renderInlineElement(seg, `ul-${bIdx}-${iIdx}-${sIdx}`)
@@ -276,13 +276,13 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
 
           case "numbered-list": {
             return (
-              <ol key={`b-${bIdx}`} className="space-y-1.5 pl-1 my-2">
+              <ol key={`b-${bIdx}`} className="space-y-2 pl-1 my-2">
                 {block.items.map((item, iIdx) => (
                   <li
                     key={`ol-${bIdx}-${iIdx}`}
-                    className="flex items-start gap-2 text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300"
+                    className="flex items-start gap-2 text-inherit leading-relaxed"
                   >
-                    <span className="font-semibold text-blue-600 dark:text-blue-400 text-xs shrink-0 min-w-4 text-right">
+                    <span className="font-bold text-blue-600 dark:text-blue-400 text-xs sm:text-sm shrink-0 min-w-4 text-right">
                       {iIdx + 1}.
                     </span>
                     <span className="flex-1 break-words">
@@ -302,7 +302,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
             return (
               <p
                 key={`b-${bIdx}`}
-                className="text-xs sm:text-sm leading-relaxed text-slate-700 dark:text-slate-300 break-words"
+                className="leading-relaxed text-inherit break-words"
               >
                 {paraSegments.map((seg, sIdx) =>
                   renderInlineElement(seg, `p-${bIdx}-${sIdx}`)

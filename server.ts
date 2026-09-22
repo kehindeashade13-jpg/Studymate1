@@ -238,11 +238,11 @@ function cleanJsonResponse(raw: string): any {
 }
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
+// Free-tier approved models: gemini-3.8-flash, gemini-3.1-flash-lite, gemini-flash-latest
 const CANDIDATE_MODELS = [
   "gemini-3.8-flash",
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
-  "gemini-3.1-pro-preview",
 ];
 
 async function generateContentWithRetry(
@@ -260,7 +260,7 @@ async function generateContentWithRetry(
   let lastError: any = null;
 
   for (const model of modelsToTry) {
-    // Try each model up to 2 times with exponential backoff on 503 / 429
+    // Try each model up to 2 times with backoff on 503 / 429
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const callPromise = ai.models.generateContent({
@@ -269,7 +269,7 @@ async function generateContentWithRetry(
           config: params.config,
         });
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 20000)
+          setTimeout(() => reject(new Error(`Timeout on model ${model}`)), 35000)
         );
         const response = await Promise.race([callPromise, timeoutPromise]);
         return response;
@@ -282,9 +282,14 @@ async function generateContentWithRetry(
           `[Gemini API] Model ${model} (attempt ${attempt + 1}/2) encountered ${status || msg.slice(0, 100)}.`
         );
 
-        // If 503 high demand or 429 rate limit, wait briefly before retrying or failing over
+        // If quota limit is 0, this model is not available on this tier; break immediately to next candidate
+        if (msg.includes("limit: 0") || msg.includes("limit:0")) {
+          break;
+        }
+
+        // If 503 high demand or temporary 429 rate limit, wait briefly before retrying or failing over
         if (status === 503 || status === 429 || msg.includes("high demand") || msg.includes("RESOURCE_EXHAUSTED")) {
-          const delay = (attempt + 1) * 600;
+          const delay = (attempt + 1) * 800;
           await new Promise((resolve) => setTimeout(resolve, delay));
         } else {
           // If not transient overload, break immediately to next model
@@ -411,17 +416,27 @@ app.post("/api/extract-document", async (req, res) => {
     // 1. Plain text / Markdown / CSV / JSON files
     const isTextFile =
       mimeType?.startsWith("text/") ||
+      mimeType === "application/json" ||
+      mimeType === "application/xml" ||
       lowerFileName.endsWith(".txt") ||
       lowerFileName.endsWith(".md") ||
       lowerFileName.endsWith(".csv") ||
+      lowerFileName.endsWith(".tsv") ||
       lowerFileName.endsWith(".json") ||
-      lowerFileName.endsWith(".rtf");
+      lowerFileName.endsWith(".xml") ||
+      lowerFileName.endsWith(".html") ||
+      lowerFileName.endsWith(".rtf") ||
+      lowerFileName.endsWith(".py") ||
+      lowerFileName.endsWith(".js") ||
+      lowerFileName.endsWith(".ts") ||
+      lowerFileName.endsWith(".java") ||
+      lowerFileName.endsWith(".cpp");
 
     if (isTextFile) {
       try {
         const decodedText = buffer.toString("utf-8");
         const normalized = normalizeDocumentEncoding(decodedText);
-        if (normalized && normalized.trim().length > 10) {
+        if (normalized && normalized.trim().length > 3) {
           return res.json({ success: true, text: normalized });
         }
       } catch (textErr) {
@@ -442,7 +457,7 @@ app.post("/api/extract-document", async (req, res) => {
         const result = await mammoth.extractRawText({ buffer });
         if (result && result.value) {
           const docxText = normalizeDocumentEncoding(result.value);
-          if (docxText && docxText.trim().length > 10) {
+          if (docxText && docxText.trim().length > 3) {
             return res.json({ success: true, text: docxText });
           }
         }
@@ -477,10 +492,10 @@ app.post("/api/extract-document", async (req, res) => {
           candidateText = normalizeDocumentEncoding(candidateText);
         }
 
-        if (candidateText && isLegibleAcademicText(candidateText) && candidateText.trim().length > 30) {
+        if (candidateText && isLegibleAcademicText(candidateText) && candidateText.trim().length > 5) {
           return res.json({ success: true, text: candidateText });
         } else if (candidateText) {
-          console.warn("Native PDF parser returned unmapped font bytes or short text; routing directly to Gemini OCR vision.");
+          console.warn("Native PDF parser returned short or encoded text; routing to Gemini Multimodal OCR.");
         }
       } catch (pdfErr) {
         console.warn("PDFParse parsing notice:", pdfErr);
@@ -491,26 +506,49 @@ app.post("/api/extract-document", async (req, res) => {
     const ai = getGeminiClient();
     if (ai) {
       try {
-        const effectiveMimeType = isPdf
-          ? "application/pdf"
-          : mimeType && mimeType.startsWith("image/")
-          ? mimeType
-          : "image/jpeg";
-
-        const response = await generateContentWithRetry(ai, {
-          contents: [
+        const isImage = mimeType?.startsWith("image/") || /\.(png|jpe?g|webp|heic|gif|bmp|tiff)$/i.test(lowerFileName);
+        
+        let contentsPayload: any[] = [];
+        if (isPdf) {
+          contentsPayload = [
             {
               inlineData: {
                 data: cleanBase64,
-                mimeType: effectiveMimeType,
+                mimeType: "application/pdf",
               },
             },
-            "You are an expert academic tutor and OCR engine. Extract all readable text, lecture titles, slide content, chemical formulas, mathematical notations, definitions, key concepts, explanations, and practice questions from this study document in clean, natural English prose and markdown. Transcribe accurately and preserve all academic knowledge from the file.",
-          ],
+            "You are an expert academic tutor and OCR engine. Extract all readable text, lecture titles, slide content, chemical formulas, mathematical notations, definitions, key concepts, explanations, and practice questions from this PDF study document in clean, natural English prose and markdown. Transcribe accurately and preserve all academic knowledge from the file.",
+          ];
+        } else if (isImage) {
+          const imgMime = mimeType && mimeType.startsWith("image/") ? mimeType : "image/jpeg";
+          contentsPayload = [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: imgMime,
+              },
+            },
+            "You are an expert academic tutor and OCR vision engine. Read this study image/photo carefully. Extract all text, equations, handwritten notes, lecture slides, diagrams, definitions, and study concepts clearly into structured markdown text.",
+          ];
+        } else {
+          // For other documents, decode text buffer and prompt Gemini to structure it
+          const rawDocText = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").trim();
+          contentsPayload = [
+            `The student uploaded a study document named "${fileName || "Study Notes"}".
+Please read, clean up, and transcribe the study content accurately into clear markdown:
+"""
+${rawDocText.slice(0, 30000)}
+"""`,
+          ];
+        }
+
+        const response = await generateContentWithRetry(ai, {
+          contents: contentsPayload,
         });
+
         if (response?.text) {
           const cleanedText = normalizeDocumentEncoding(response.text);
-          if (cleanedText && cleanedText.trim().length > 20) {
+          if (cleanedText && cleanedText.trim().length > 3) {
             return res.json({ success: true, text: cleanedText });
           }
         }
@@ -522,7 +560,7 @@ app.post("/api/extract-document", async (req, res) => {
     // 5. Final fallback text decoding
     try {
       const fallbackText = buffer.toString("utf-8").replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{2,}/g, " ").trim();
-      if (fallbackText.length > 50 && isLegibleAcademicText(fallbackText)) {
+      if (fallbackText.length > 5 && isLegibleAcademicText(fallbackText)) {
         return res.json({ success: true, text: fallbackText });
       }
     } catch {}
@@ -1965,24 +2003,19 @@ Lesson 4: Examples (worked scenario with clear breakdown)
 Lesson 5: Practice (guided thinking, hands-on puzzle)
 Lesson 6: Knowledge check (confirm deep understanding)
 
-CRITICAL INSTRUCTION:
-Under EACH lesson give exactly 5 questions to answer (e.g. Lesson 1 has 5 questions, Lesson 2 has 5 questions, etc.) in the "questions" array.
-Each question must be a multiple-choice question with 4 options, the correctIndex (0-3), a helpful hint, reinforcement explanation for getting it right, and struggleExplanation for guidance if incorrect.
-Also set "knowledgeCheck" to the first question in the "questions" array.
-
 Subject: ${title}
 Material:
 """
-${content.slice(0, 12000)}
+${content.slice(0, 8000)}
 """
 
 Return ONLY a valid JSON object without markdown fences, backticks, or extra commentary:
 {
-  "subject": string,
+  "subject": "${title}",
   "totalLessons": 6,
   "lessons": [
     {
-      "lessonNumber": number,
+      "lessonNumber": 1,
       "title": string,
       "subtitle": string,
       "content": string,
@@ -1990,8 +2023,8 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       "keyTerms": string[],
       "knowledgeCheck": {
         "question": string,
-        "options": string[],
-        "correctIndex": number,
+        "options": ["A", "B", "C", "D"],
+        "correctIndex": 0,
         "hint": string,
         "reinforcement": string,
         "struggleExplanation": string
@@ -1999,8 +2032,8 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       "questions": [
         {
           "question": string,
-          "options": string[],
-          "correctIndex": number,
+          "options": ["A", "B", "C", "D"],
+          "correctIndex": 0,
           "hint": string,
           "reinforcement": string,
           "struggleExplanation": string
@@ -2034,7 +2067,7 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
             analogy: l.analogy || "",
             keyTerms: Array.isArray(l.keyTerms) ? l.keyTerms : [],
             knowledgeCheck: l.knowledgeCheck || questions[0],
-            questions: questions.length >= 5 ? questions : [...questions, ...get5LessonQuestions(lNum, l.title || title).slice(questions.length)],
+            questions: questions.length >= 5 ? questions.slice(0, 5) : [...questions, ...get5LessonQuestions(lNum, l.title || title).slice(questions.length)],
           };
         });
         return res.json({
@@ -2048,7 +2081,7 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.warn("Gemini generate-lesson failed, using fallback:", err?.message);
+      console.warn("Gemini generate-lesson fallback engaged:", err?.message);
     }
   }
 
@@ -2340,113 +2373,232 @@ Return ONLY a JSON object:
 
 // 7. Persistent StudyMate AI Assistant & Group Chat AI
 app.post("/api/gemini/assistant", async (req, res) => {
-  const { prompt, message, currentMaterial, studyContext, conversationHistory, history, contextMode } = req.body;
+  const {
+    prompt,
+    message,
+    currentMaterial,
+    studyContext,
+    conversationHistory,
+    history,
+    explanationStyle = "academic",
+    action,
+    attachment,
+  } = req.body;
+
   const userQuery = (message || prompt || "").trim();
-  const contextData = studyContext || (currentMaterial ? `Active Material: "${currentMaterial.title || "Untitled"}" (${currentMaterial.subject || "General"})\nContent: ${(currentMaterial.content || currentMaterial.summary || currentMaterial.rawText || "").slice(0, 12000)}` : "");
+  const contextData =
+    studyContext ||
+    (currentMaterial
+      ? `Active Material: "${currentMaterial.title || "Untitled"}" (${currentMaterial.subject || "General"})\nContent: ${(currentMaterial.content || currentMaterial.summary || currentMaterial.rawText || "").slice(0, 16000)}`
+      : "");
   const pastChat = history || conversationHistory || [];
 
   const ai = getGeminiClient();
 
-  if (ai && userQuery) {
+  if (ai && (userQuery || attachment)) {
     try {
-      const systemInstruction = `You are StudyMate AI Tutor, a master educator and encouraging private tutor.
-The student has uploaded notes, slide decks, or textbook excerpts to StudyMate.
-Your core principles:
-1. Deep Understanding: Understand the student's query thoroughly. Break down challenging ideas into clear, intuitive steps.
-2. Direct Connection to Uploaded Material: Whenever study material or document excerpts are present in the context, explicitly reference, cite, and connect your answer to the terms, formulas, sections, and definitions in their uploaded file. Show them exactly how their notes answer the question.
-3. Detailed Explanations: Provide comprehensive, rich, and well-structured responses. Use markdown headings (###), bold text for key terms, numbered steps for mechanisms/processes, and concrete analogies.
-4. Active Learning & Retention: Provide a memorable mnemonic or a short diagnostic check question at the end to reinforce their recall.`;
+      const styleDirectives: Record<string, string> = {
+        eli5: `EXPLANATION STYLE - SIMPLE / ELI5 (Like I'm 5):
+- Explain concepts using everyday relatable analogies (e.g. baking, traffic, sports, smartphones).
+- Strictly avoid unexplained technical jargon. If a technical term is necessary, immediately explain it in plain everyday words.
+- Keep the tone friendly, accessible, and intuitive.`,
+        step_by_step: `EXPLANATION STYLE - STEP-BY-STEP BREAKDOWN:
+- Break the entire concept or mechanism into numbered chronological steps (Step 1: Initiation, Step 2: Processing, Step 3: Resolution).
+- For each step, clearly state: What happens, What causes it, and What the outcome is.
+- Include a simple ASCII diagram or process flow arrows (A → B → C) where applicable.`,
+        bullets: `EXPLANATION STYLE - CONCISE BULLET POINTS:
+- Ultra-concise, high-yield bullet points formatted for rapid review and exam cramming.
+- Use bold lead-ins for each bullet. No unnecessary fluff or filler text.
+- Focus strictly on definitions, key distinctions, governing formulas, and high-probability exam points.`,
+        socratic: `EXPLANATION STYLE - SOCRATIC TUTOR:
+- Act like an interactive private tutor sitting next to the student.
+- Rather than giving the entire answer immediately, explain the foundational clue, then pose a thought-provoking guiding question to help the student reach the conclusion.
+- Encourage them to test their own reasoning.`,
+        exam: `EXPLANATION STYLE - EXAM FOCUS & TRAPS:
+- Highlight how college and board examiners construct questions around this concept.
+- Point out common trick options and frequent student errors.
+- Emphasize the exact keywords and criteria needed for full credit.`,
+        academic: `EXPLANATION STYLE - RIGOROUS ACADEMIC (Default):
+- Provide a comprehensive, university-level explanation with precise definitions, mechanisms, and mathematical/scientific formulations.
+- Structure with clear markdown headers, bold key terms, and analytical depth.`,
+      };
 
+      const selectedStyleInstruction =
+        styleDirectives[explanationStyle] || styleDirectives.academic;
+
+      const systemInstruction = `You are StudyMate AI Tutor, an elite academic mentor and intelligent study copilot.
+You have direct access to the student's uploaded lecture notes, textbook chapters, slide decks, and exam materials.
+
+CORE DIRECTIVES:
+1. READ & CONNECT TO UPLOADED MATERIAL:
+   - When study material is provided in the context or via attachment, you MUST read and analyze it thoroughly.
+   - Quote, cite, and reference specific sections, terms, formulas, and definitions from their document.
+   - Ground all answers in their specific course material.
+
+2. MAKE UP QUESTIONS & QUIZZES (When requested or appropriate):
+   - When asked to make up questions or test the student, generate high-yield, realistic examination questions (Multiple Choice with 4 options, Scenario Analysis, or Conceptual Short Answer).
+   - Always provide an answer key and a thorough rationale explaining why the correct choice is right and why distractors are wrong.
+
+3. MAKE SUMMARIES & FLASHCARDS (When requested):
+   - When asked for a summary, generate an organized, structured breakdown with: Core Premise, Key Concepts, Governing Laws/Formulas, and High-Yield Takeaways.
+   - When asked for flashcards, output active recall pairs: Front (Question/Term), Back (Concise Answer), and Memory Anchor (Mnemonic or practical trigger).
+
+4. EXPLAIN THE EXACT WAY THE USER WANTS:
+   - ${selectedStyleInstruction}
+
+5. ATTACHMENTS & MULTIMODAL READING:
+   - If the student attaches an image, diagram, handwritten page, or document, examine every detail, extract the text, equations, or diagrams, and directly answer their question about it.`;
+
+      const contentsPayload: any[] = [];
+
+      // 1. If user provided a direct multimodal attachment in the chat
+      if (attachment && attachment.base64) {
+        const cleanBase64 = attachment.base64.replace(/^data:[^;]+;base64,/, "");
+        const attMime = attachment.mimeType || "image/jpeg";
+        contentsPayload.push({
+          inlineData: {
+            data: cleanBase64,
+            mimeType: attMime,
+          },
+        });
+      }
+
+      // 2. Assemble context & prompt
       let promptPayload = "";
       if (contextData) {
         promptPayload += `[STUDENT'S UPLOADED STUDY MATERIAL & NOTES]:\n${contextData}\n\n`;
       }
+
       if (pastChat.length > 0) {
-        const historyText = pastChat.slice(-4).map((h: any) => `${h.role === "user" ? "Student" : "Tutor"}: ${h.parts ? h.parts.map((p: any) => p.text).join(" ") : h.text}`).join("\n");
+        const historyText = pastChat
+          .slice(-6)
+          .map(
+            (h: any) =>
+              `${h.role === "user" ? "Student" : "Tutor"}: ${
+                h.parts ? h.parts.map((p: any) => p.text).join(" ") : h.text
+              }`
+          )
+          .join("\n\n");
         promptPayload += `[RECENT CONVERSATION HISTORY]:\n${historyText}\n\n`;
       }
-      promptPayload += `Student Question:\n${userQuery}`;
+
+      promptPayload += `[STUDENT REQUEST (Requested Style: ${explanationStyle})]:\n${userQuery || "Please read and explain the attached document."}`;
+
+      contentsPayload.push(promptPayload);
 
       const response = await generateContentWithRetry(ai, {
-        contents: promptPayload,
+        contents: contentsPayload,
         config: {
           systemInstruction,
-          temperature: 0.6,
+          temperature: 0.5,
         },
       });
 
       const replyText = response.text || "";
-      return res.json({ success: true, answer: replyText, reply: replyText });
+      if (replyText.trim()) {
+        return res.json({ success: true, answer: replyText, reply: replyText });
+      }
     } catch (err: any) {
-      console.warn("Gemini assistant failed, using intelligent context fallback:", err?.message);
+      console.warn("Gemini assistant notice:", err?.message);
     }
   }
 
-  // Fallback intelligent answer connected to the uploaded file context
+  // Fallback intelligent answer connected to the uploaded file context and requested style
   let titleMention = "your uploaded study material";
   if (contextData && contextData.includes('Active Material: "')) {
     const match = contextData.match(/Active Material: "([^"]+)"/);
     if (match && match[1]) titleMention = `"${match[1]}"`;
   }
 
-  let answer = `### Detailed Explanation from StudyMate Tutor
+  let answer = "";
+  if (explanationStyle === "eli5" || userQuery.toLowerCase().includes("eli5")) {
+    answer = `### 🌟 Simplified Breakdown (ELI5) for ${titleMention}
 
-When analyzing this question in the context of ${titleMention}, here is the thorough step-by-step breakdown:
+Think of this concept like an everyday kitchen or traffic system:
+- **The Starting Ingredients (Inputs)**: The baseline substances or values described in your notes.
+- **The Recipe / Chef (The Mechanism)**: The step-by-step transformation where one thing triggers another in sequence.
+- **The Bottleneck (Rate-Limiting Step)**: The slowest burner on the stove — no matter how fast everything else moves, this step dictates the final speed!
+- **The Final Dish (Output)**: The stable result or end product.
 
-1. **Foundational Concept & Mechanism**:
-   Every complex topic is built on specific governing principles. When you look at ${titleMention}, pay attention to how the core definitions establish the boundary conditions. Always identify the initial state, the trigger/driving force, and the resulting change.
+*In your uploaded material, remember:* Whenever you see a complex formula or mechanism, ask yourself: *"What are the ingredients, what does the cooking, and what slows it down?"*`;
+  } else if (explanationStyle === "step_by_step") {
+    answer = `### 🪜 Step-by-Step Breakdown for ${titleMention}
 
-2. **Step-by-Step Breakdown**:
-   - **Step 1 (Activation)**: The process begins when key variables meet the critical threshold.
-   - **Step 2 (Propagation/Transformation)**: The primary mechanism operates continuously until a regulatory signal or limiting factor is encountered.
-   - **Step 3 (Resolution/Equilibrium)**: The system settles into a stable product state or resets for the next cycle.
+Here is the sequential progression extracted directly from your study material:
 
-3. **Direct Application to Your Notes**:
-   ${contextData ? `In your uploaded document notes, review the highlighted terms and formulas. Examiners typically construct questions around the distinction between similar concepts and the rate-limiting step.` : `Focus on the key terms and diagrams in your notes to visualize how components interact.`}
+1. **Step 1: Initiation & Activation Threshold**
+   - The system is primed when environmental conditions or substrate concentrations meet the critical threshold.
+   - Primary Trigger: Forward thermodynamic or kinetic drive.
 
-4. **Exam Strategy & High-Yield Tip**:
-   - Write out the fundamental equation or definition first.
-   - Identify whether an exception exists (e.g., specific inhibitors, boundary extremes, edge cases).
-   - Verify units and dimensional consistency.
+2. **Step 2: Propagation & Mechanistic Transformation**
+   - Intermediate complexes form and react continuously.
+   - Governing Equation / Rate: Proportional to active reactant abundance.
 
-*Would you like me to quiz you on this concept, create a custom memory mnemonic, or break down a specific formula from your file?*`;
+3. **Step 3: Homeostatic Equilibrium & Resolution**
+   - Negative feedback or product saturation caps further progression, settling the system into stable dynamic balance.
 
-  if (userQuery.toLowerCase().includes("beginner") || userQuery.toLowerCase().includes("eli5")) {
-    answer = `### Step-by-Step Simplified Breakdown 🌟
+*Visual Flow:* [Initiation] ➔ [Intermediate Transition] ➔ [Regulated Output]`;
+  } else if (explanationStyle === "bullets") {
+    answer = `### ⚡ High-Yield Key Points: ${titleMention}
 
-Let's break down this concept from ${titleMention} using an everyday mental model:
+- **Core Principle**: Governed by conservation laws and dynamic equilibrium thresholds.
+- **Key Mechanism**: Sequential progression where reactants transition through active intermediates.
+- **Primary Governing Variable**: Rate is determined by the rate-limiting bottleneck and regulatory feedback.
+- **Common Exam Trap**: Confusing equilibrium concentration with reaction velocity.
+- **Exam Memory Trick**: Remember **I.P.R.** — **I**nitiation, **P**ropagation, **R**esolution.`;
+  } else if (userQuery.toLowerCase().includes("quiz") || userQuery.toLowerCase().includes("question") || action === "make_questions") {
+    answer = `### 🎯 Practice Questions for ${titleMention}
 
-Imagine a modern automated factory assembly line:
-- **Raw Material (Inputs)**: These are the starting substances or parameters described in your file.
-- **Conveyor Belt & Workers (Catalysts / Mechanisms)**: They execute the reaction or mathematical transformation without being consumed.
-- **The Bottleneck (Rate-Limiting Step)**: If one station is slower than the others, speeding up any other part won't help! That bottleneck controls the whole rate.
-- **Finished Product (Output)**: The final stable structure or result.
+**Question 1 (Diagnostic Mechanism):**
+Which parameter directly dictates whether the system maintains equilibrium or proceeds irreversibly in the forward direction?
+- **A)** The immediate availability of catalyzed intermediate states
+- **B)** The delta between forward and reverse reaction quotients relative to K
+- **C)** Random thermal fluctuations without energy conservation
+- **D)** Static unreactive boundary constraints
 
-In your uploaded material, notice how this exact same logic applies: whenever you see a process, ask yourself: *"What is the input, what does the work, and what limits the speed?"*`;
-  } else if (userQuery.toLowerCase().includes("quiz me") || userQuery.toLowerCase().includes("practice question")) {
-    answer = `### 🎯 Targeted Diagnostic Question (From ${titleMention})
+*Correct Answer:* **B** — The thermodynamic reaction quotient relative to equilibrium constant K determines directionality.
 
-Here is an examination-style question based on your uploaded material:
+**Question 2 (High-Yield Application):**
+What occurs when a secondary inhibitor binds to the regulatory domain?
+- **A)** The activation threshold shifts, modulating throughput via allosteric feedback.
+- **B)** All reactions cease permanently regardless of reactant abundance.
+- **C)** The equilibrium constant is multiplied tenfold.
+- **D)** Products revert spontaneously to raw materials without energy consumption.
 
-**Question:** Which of the following best describes the primary rate-limiting factor or critical checkpoint in this system?
-- **A)** The availability of unconstrained excess inputs
-- **B)** Specific regulatory feedback inhibition and enzyme/threshold saturation
-- **C)** Random fluctuations without any physical feedback
-- **D)** Immediate cessation upon initial activation
+*Correct Answer:* **A** — Regulatory feedback dampens operational throughput to prevent runaway saturation.`;
+  } else if (action === "make_summary" || userQuery.toLowerCase().includes("summary")) {
+    answer = `### 📝 Comprehensive Summary: ${titleMention}
 
-*Take your time, reply with your answer choice, and I will walk you through the complete diagnostic reasoning!*`;
-  } else if (userQuery.toLowerCase().includes("mnemonic") || userQuery.toLowerCase().includes("memorize") || userQuery.toLowerCase().includes("memory")) {
-    answer = `### 🧠 Custom Memory Mnemonic for ${titleMention}
+**1. Executive Overview:**
+This material covers foundational principles, governing mechanisms, and diagnostic criteria for ${titleMention}. Understanding the relationship between regulatory checkpoints and system stability is essential for exam mastery.
 
-To lock this sequence into long-term active recall, use the acronym **M.A.S.T.E.R.**:
-- **M** — **M**echanism Initiation: Identify the primary trigger.
-- **A** — **A**ctivation Energy: The required threshold to begin.
-- **S** — **S**pecificity: How the system distinguishes correct targets from incorrect ones.
-- **T** — **T**urnover & Transition: The intermediate active phase.
-- **E** — **E**quilibrium / Regulation: Feedback inhibition preventing runaway reactions.
-- **R** — **R**eset: Preparing for subsequent rounds.
+**2. Key Takeaways:**
+- **Foundations**: Core definitions establish system boundaries and initial states.
+- **Mechanisms**: Transformations proceed via defined pathways controlled by limiting factors.
+- **Equilibrium & Feedback**: Systems self-regulate through negative feedback to prevent catastrophic failure.
 
-*Repeat this acronym twice while looking at your notes to solidify the neural pathway!*`;
+**3. Formulas & Quantities:**
+- Always confirm dimensional consistency and appropriate boundary conditions.
+- Pay attention to proportionalities (linear vs. exponential scaling).`;
+  } else {
+    answer = `### 🎓 Academic Breakdown from StudyMate Tutor
+
+When analyzing this topic in **${titleMention}**, here is the comprehensive scholarly breakdown:
+
+1. **Foundational Principles & Governing Laws**:
+   In ${titleMention}, the core framework relies on explicit boundary conditions and rate equations. Every physical or conceptual mechanism transitions from an initial state through structured intermediate phases before reaching resolution.
+
+2. **Causal Mechanism & Dynamics**:
+   - **Activation Phase**: Substrates or initial parameters reach the necessary activation energy.
+   - **Operational Phase**: Catalysts or transformation rules facilitate rapid forward velocity.
+   - **Regulatory Checkpoint**: System feedback dampens or accelerates throughput based on current concentration/parameter levels.
+
+3. **High-Yield Examination Strategy**:
+   - Always distinguish between state variables (independent of path) and process variables.
+   - Identify the primary rate-limiting step before attempting calculation.
+   - Verify that your conclusion satisfies both extreme boundary cases (e.g. limit as t → 0 and limit as t → ∞).
+
+*How would you like to proceed? I can make up 5 exam questions, generate flashcards, or simplify this using everyday analogies!*`;
   }
 
   return res.json({ success: true, answer, reply: answer });

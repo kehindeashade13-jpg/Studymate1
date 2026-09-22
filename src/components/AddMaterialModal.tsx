@@ -437,12 +437,15 @@ export const AddMaterialModal: React.FC = () => {
         };
       }
 
-      // 2. Fetch specialized study assets in parallel with 15s safety timeout
-      const [rawNotesRes, rawFlashcardsRes, rawQuizRes, rawLessonRes] = await Promise.all([
-        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 15000),
-        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 15000),
-        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 15000),
-        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 15000),
+      // 2. Fetch specialized study assets in two staggered pairs to prevent rate-limit concurrency spikes
+      const [rawNotesRes, rawFlashcardsRes] = await Promise.all([
+        safeFetchJson<any>("/api/gemini/generate-notes", { title: finalTitle, content: rawContent }, 25000),
+        safeFetchJson<any>("/api/gemini/generate-flashcards", { title: finalTitle, content: rawContent }, 25000),
+      ]);
+
+      const [rawQuizRes, rawLessonRes] = await Promise.all([
+        safeFetchJson<any>("/api/gemini/generate-quiz", { title: finalTitle, content: rawContent, questionCount: 20, variant: 1 }, 25000),
+        safeFetchJson<any>("/api/gemini/generate-lesson", { title: finalTitle, content: rawContent }, 25000),
       ]);
 
       const notesRes = rawNotesRes?.data || rawNotesRes;
