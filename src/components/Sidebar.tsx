@@ -15,7 +15,6 @@ import {
   Plus,
   X,
   Trash2,
-  Flame,
   Zap,
   BookOpen,
   ChevronRight,
@@ -43,7 +42,6 @@ const mainNavItems: NavItem[] = [
   { tab: "quizzes", label: "Quizzes & Tests", icon: HelpCircle },
   { tab: "learn", label: "Step Lessons", icon: GraduationCap },
   { tab: "plan", label: "Study Plan", icon: CalendarDays },
-  { tab: "progress", label: "Progress & Stats", icon: BarChart3 },
   { tab: "profile", label: "Profile", icon: UserCircle },
   { tab: "history", label: "HISTORY", icon: Clock, isBoldUpper: true },
 ];
@@ -179,10 +177,6 @@ export const Sidebar: React.FC = () => {
                     {user.name && user.name !== "Sarah Chen" ? user.name : "Student Learner"}
                   </h3>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[11px] font-semibold text-[#1B2A4A]/70">
-                      {user.streakDays || 0} Day Streak
-                    </span>
-                    <span className="text-slate-300">•</span>
                     <span className="text-[11px] font-bold text-[#0A1931]">
                       {materials.length} {materials.length === 1 ? "Deck" : "Decks"}
                     </span>
@@ -198,20 +192,6 @@ export const Sidebar: React.FC = () => {
                 className="text-xs font-bold text-[#0A1931] hover:underline cursor-pointer"
               >
                 Profile
-              </button>
-            </div>
-
-            {/* Streak Row (Only streak retained) */}
-            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-[#0A1931]">
-              <div className="flex items-center gap-1.5 bg-white px-3 py-1 rounded-full border border-slate-200 shadow-2xs">
-                <Flame className="w-4 h-4 fill-orange-500 text-orange-500" />
-                <span>{user.streakDays || 0} Day Streak</span>
-              </div>
-              <button
-                onClick={() => handleSelectTab("progress")}
-                className="text-[11px] font-bold text-[#0A1931] hover:underline cursor-pointer"
-              >
-                View Streak
               </button>
             </div>
 

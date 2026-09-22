@@ -54,10 +54,6 @@ export const ProfileView: React.FC = () => {
               <span className="text-xs text-[#1B2A4A]/70">{user.institution}</span>
             </div>
             <h1 className="text-2xl font-black text-[#0A1931]">{user.name}</h1>
-            <p className="text-xs text-[#1B2A4A]/80 mt-1 flex items-center gap-1.5 font-medium">
-              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
-              <span>{user.streakDays} Day Study Streak &bull; {user.xp || 0} XP</span>
-            </p>
           </div>
         </div>
 

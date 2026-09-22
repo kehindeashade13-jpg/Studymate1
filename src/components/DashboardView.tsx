@@ -3,7 +3,6 @@ import { useStudy } from "../context/StudyContext";
 import {
   Menu,
   Star,
-  Flame,
   Plus,
   ArrowUp,
   Camera,

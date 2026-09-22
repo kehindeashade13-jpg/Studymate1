@@ -322,7 +322,7 @@ export const LearnView: React.FC = () => {
               </h3>
             </div>
             <span className="text-xs font-semibold text-amber-300 bg-amber-950/60 border border-amber-700/60 px-3 py-1 rounded-full w-fit">
-              {masteredQuestionsCount} of 5 Answered Correctly (+25 XP each)
+              {masteredQuestionsCount} of 5 Answered Correctly
             </span>
           </div>
 
@@ -421,7 +421,7 @@ export const LearnView: React.FC = () => {
                   {isAnswerCorrect ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>Brilliant! Question {activeQuestionIdx + 1} Understood (+25 XP)</span>
+                      <span>Brilliant! Question {activeQuestionIdx + 1} Understood</span>
                     </>
                   ) : (
                     <>

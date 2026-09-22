@@ -29,7 +29,6 @@ export const Navbar: React.FC = () => {
     memorise: "Memorise & Flashcards",
     quizzes: "Quizzes & Practice",
     plan: "Study Plan",
-    progress: "Progress & Badges",
     profile: "Student Profile",
     landing: "About StudyMate",
   };
