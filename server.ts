@@ -238,11 +238,12 @@ function cleanJsonResponse(raw: string): any {
 }
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
-// Free-tier approved models: gemini-3.8-flash, gemini-3.1-flash-lite, gemini-flash-latest
+// Free-tier approved models prioritizing high-throughput flash-lite and flash-latest
 const CANDIDATE_MODELS = [
-  "gemini-3.8-flash",
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
+  "gemini-3.8-flash",
+  "gemini-3.1-pro-preview",
 ];
 
 async function generateContentWithRetry(

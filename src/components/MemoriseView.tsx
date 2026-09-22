@@ -558,69 +558,31 @@ export const MemoriseView: React.FC = () => {
             </div>
           </div>
 
-          {/* Spaced Repetition Rating Buttons or Action Bar */}
-          {isFlipped ? (
-            <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-center animate-in fade-in">
-              <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                <button
-                  onClick={() => handleRating("again")}
-                  className="py-2.5 px-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/60 text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <span>Again</span>
-                  <span className="text-[10px] text-rose-400/80">&lt; 1 min</span>
-                </button>
+          {/* Flashcard Action & Navigation Bar */}
+          <div className="flex items-center justify-between gap-3 pt-2">
+            <button
+              onClick={handlePrevCard}
+              disabled={currentCardIndex === 0}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 disabled:opacity-30 transition cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" /> Previous
+            </button>
 
-                <button
-                  onClick={() => handleRating("hard")}
-                  className="py-2.5 px-2 rounded-xl bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/60 text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <span>Hard</span>
-                  <span className="text-[10px] text-amber-400/80">10 mins</span>
-                </button>
+            <button
+              onClick={() => setIsFlipped(!isFlipped)}
+              className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white shadow-md shadow-purple-600/20 transition cursor-pointer"
+            >
+              {isFlipped ? "Flip Back to Question" : "Reveal Answer & Explanation"}
+            </button>
 
-                <button
-                  onClick={() => handleRating("good")}
-                  className="py-2.5 px-2 rounded-xl bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 border border-blue-800/60 text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <span>Good</span>
-                  <span className="text-[10px] text-blue-400/80">1 day</span>
-                </button>
-
-                <button
-                  onClick={() => handleRating("easy")}
-                  className="py-2.5 px-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/60 text-xs font-bold transition flex flex-col items-center gap-1 cursor-pointer"
-                >
-                  <span>Easy</span>
-                  <span className="text-[10px] text-emerald-400/80">3 days</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <button
-                onClick={handlePrevCard}
-                disabled={currentCardIndex === 0}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 disabled:opacity-30 transition cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" /> Previous
-              </button>
-
-              <button
-                onClick={() => setIsFlipped(true)}
-                className="px-6 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white shadow-md shadow-purple-600/20 transition cursor-pointer"
-              >
-                Reveal Answer & Explanation
-              </button>
-
-              <button
-                onClick={handleNextCard}
-                disabled={currentCardIndex === activeCards.length - 1}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 disabled:opacity-30 transition cursor-pointer"
-              >
-                Next <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+            <button
+              onClick={handleNextCard}
+              disabled={currentCardIndex === activeCards.length - 1}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 disabled:opacity-30 transition cursor-pointer"
+            >
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 
