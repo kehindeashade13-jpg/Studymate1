@@ -138,7 +138,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
               return (
                 <h2
                   key={`b-${bIdx}`}
-                  className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white pt-3 pb-1 border-b border-slate-200 dark:border-slate-800 leading-snug"
+                  className="text-lg sm:text-xl font-bold text-inherit pt-3 pb-1 border-b border-current/20 leading-snug"
                 >
                   {nodes}
                 </h2>
@@ -148,7 +148,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
               return (
                 <h3
                   key={`b-${bIdx}`}
-                  className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 pt-2 pb-1 border-b border-slate-200/80 dark:border-slate-800/80 leading-snug"
+                  className="text-base sm:text-lg font-bold text-inherit pt-2 pb-1 border-b border-current/15 leading-snug"
                 >
                   {nodes}
                 </h3>
@@ -157,7 +157,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
             return (
               <h4
                 key={`b-${bIdx}`}
-                className="text-sm sm:text-base font-semibold text-blue-600 dark:text-blue-300 pt-1 pb-0.5 leading-snug"
+                className="text-sm sm:text-base font-semibold text-blue-400 pt-1 pb-0.5 leading-snug"
               >
                 {nodes}
               </h4>
@@ -169,7 +169,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
             return (
               <div
                 key={`b-${bIdx}`}
-                className="my-3 py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800 overflow-x-auto text-center"
+                className="my-3 py-2 px-3 rounded-xl bg-slate-800/60 border border-slate-700/60 text-inherit overflow-x-auto text-center"
               >
                 {mathResult.isMath ? (
                   <div dangerouslySetInnerHTML={{ __html: mathResult.html }} />
@@ -184,11 +184,11 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
             return (
               <div
                 key={`b-${bIdx}`}
-                className="my-3 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs"
+                className="my-3 overflow-x-auto rounded-xl border border-slate-700/60 shadow-xs"
               >
                 <table className="w-full text-left text-xs sm:text-sm border-collapse">
                   <thead>
-                    <tr className="bg-slate-100/90 dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 font-semibold border-b border-slate-200 dark:border-slate-700">
+                    <tr className="bg-slate-800/80 text-inherit font-semibold border-b border-slate-700">
                       {block.headers.map((h, hIdx) => (
                         <th key={`th-${bIdx}-${hIdx}`} className="p-2.5 sm:p-3 whitespace-nowrap">
                           {parseInlineSegments(h).map((seg, sIdx) =>
@@ -198,16 +198,16 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-slate-700/60">
                     {block.rows.map((row, rIdx) => (
                       <tr
                         key={`tr-${bIdx}-${rIdx}`}
-                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
+                        className="hover:bg-slate-800/40 transition-colors"
                       >
                         {row.map((cell, cIdx) => (
                           <td
                             key={`td-${bIdx}-${rIdx}-${cIdx}`}
-                            className="p-2.5 sm:p-3 text-slate-700 dark:text-slate-300 align-top break-words"
+                            className="p-2.5 sm:p-3 text-inherit align-top break-words"
                           >
                             {parseInlineSegments(cell).map((seg, sIdx) =>
                               renderInlineElement(seg, `td-${bIdx}-${rIdx}-${cIdx}-${sIdx}`)
@@ -245,7 +245,7 @@ export const UniversalContentRenderer: React.FC<UniversalContentRendererProps> =
             return (
               <blockquote
                 key={`b-${bIdx}`}
-                className="my-2 p-3 sm:p-3.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/30 border-l-4 border-blue-500 text-slate-800 dark:text-blue-100 text-xs sm:text-sm leading-relaxed"
+                className="my-2 p-3 sm:p-3.5 rounded-xl bg-blue-950/40 border-l-4 border-blue-500 text-blue-100 text-xs sm:text-sm leading-relaxed"
               >
                 {quoteSegments.map((seg, sIdx) =>
                   renderInlineElement(seg, `q-${bIdx}-${sIdx}`)

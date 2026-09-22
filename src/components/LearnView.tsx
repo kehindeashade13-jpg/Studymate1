@@ -266,7 +266,7 @@ export const LearnView: React.FC = () => {
       </div>
 
       {/* Main Lesson Stage */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6">
+      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 space-y-6 text-slate-100">
         {/* Step Header */}
         <div className="border-b border-slate-800 pb-5">
           <div className="flex items-center justify-between text-xs text-blue-400 font-semibold uppercase tracking-wider mb-1">
@@ -274,17 +274,17 @@ export const LearnView: React.FC = () => {
             <span>5 Interactive Questions Below</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white">{currentStep.title}</h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">{currentStep.subtitle}</p>
+          <p className="text-xs sm:text-sm text-slate-300 mt-1">{currentStep.subtitle}</p>
         </div>
 
         {/* Lesson Body Content */}
-        <div className="pt-2">
-          <CleanFormattedText content={currentStep.content} />
+        <div className="pt-2 text-slate-100 text-sm sm:text-base leading-relaxed">
+          <CleanFormattedText content={currentStep.content} className="text-slate-100 text-sm sm:text-base leading-relaxed" />
         </div>
 
         {/* Intuitive Analogy Box */}
         {currentStep.analogy && (
-          <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/40 flex items-start gap-3.5">
+          <div className="p-4 rounded-2xl bg-indigo-950/50 border border-indigo-700/50 flex items-start gap-3.5 text-indigo-100">
             <div className="p-2 rounded-xl bg-indigo-600/30 text-indigo-300 shrink-0">
               <Lightbulb className="w-5 h-5" />
             </div>
@@ -292,7 +292,7 @@ export const LearnView: React.FC = () => {
               <h4 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-1">
                 Intuitive Mental Model & Analogy
               </h4>
-              <CleanFormattedText as="p" content={currentStep.analogy} className="text-xs text-indigo-100/90 leading-relaxed" />
+              <CleanFormattedText as="p" content={currentStep.analogy} className="text-xs sm:text-sm text-indigo-100 leading-relaxed" />
             </div>
           </div>
         )}
@@ -300,11 +300,11 @@ export const LearnView: React.FC = () => {
         {/* Key Terms Badges */}
         {currentStep.keyTerms && currentStep.keyTerms.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap pt-2">
-            <span className="text-xs text-slate-400 font-semibold">Key Terms:</span>
+            <span className="text-xs text-slate-300 font-semibold">Key Terms:</span>
             {currentStep.keyTerms.map((term) => (
               <span
                 key={term}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-medium text-slate-200 border border-slate-700"
+                className="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-medium text-slate-100 border border-slate-700"
               >
                 {term}
               </span>
@@ -321,7 +321,7 @@ export const LearnView: React.FC = () => {
                 5 Practice Questions for Lesson {currentStep.lessonNumber || currentStepIdx + 1}
               </h3>
             </div>
-            <span className="text-xs font-semibold text-amber-400 bg-amber-950/40 border border-amber-800/40 px-3 py-1 rounded-full w-fit">
+            <span className="text-xs font-semibold text-amber-300 bg-amber-950/60 border border-amber-700/60 px-3 py-1 rounded-full w-fit">
               {masteredQuestionsCount} of 5 Answered Correctly (+25 XP each)
             </span>
           </div>
@@ -341,10 +341,10 @@ export const LearnView: React.FC = () => {
                     isCurrent
                       ? "bg-blue-600 border-blue-400 text-white shadow-md shadow-blue-600/20"
                       : isDone
-                      ? "bg-emerald-950/40 border-emerald-500/40 text-emerald-300"
+                      ? "bg-emerald-950/60 border-emerald-500/60 text-emerald-300"
                       : isWrong
-                      ? "bg-rose-950/40 border-rose-500/40 text-rose-300"
-                      : "bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750"
+                      ? "bg-rose-950/60 border-rose-500/60 text-rose-300"
+                      : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750"
                   }`}
                 >
                   <span>Q{qIdx + 1}</span>
@@ -355,8 +355,8 @@ export const LearnView: React.FC = () => {
           </div>
 
           {/* Active Question Prompt */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-slate-850 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-400">
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-4 text-slate-100">
+            <div className="flex items-center justify-between text-xs text-slate-300">
               <span className="font-semibold uppercase tracking-wider text-blue-400">
                 Question {activeQuestionIdx + 1} of 5
               </span>

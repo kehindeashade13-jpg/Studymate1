@@ -229,7 +229,7 @@ export const QuizzesView: React.FC = () => {
 
       {!isQuizSubmitted ? (
         /* ACTIVE QUIZ QUESTION STAGE */
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 text-slate-100">
           {/* Progress Bar & Question Count */}
           <div className="flex items-center justify-between text-xs text-slate-400 pb-4 border-b border-slate-800">
             <span>
