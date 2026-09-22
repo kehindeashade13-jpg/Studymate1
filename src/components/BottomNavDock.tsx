@@ -4,7 +4,7 @@ import {
   Home,
   Gamepad2,
   FolderKanban,
-  MessageSquare,
+  GraduationCap,
   User,
 } from "lucide-react";
 
@@ -31,9 +31,9 @@ export const BottomNavDock: React.FC = () => {
       badge: undefined,
     },
     {
-      tab: "groups" as const,
-      label: "Groups",
-      icon: MessageSquare,
+      tab: "learn" as const,
+      label: "Lessons",
+      icon: GraduationCap,
       badge: undefined,
     },
     {

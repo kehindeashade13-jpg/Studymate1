@@ -2,7 +2,12 @@ import React, { useState } from "react";
 import { useStudy } from "../context/StudyContext";
 import {
   Edit3,
-  Phone,
+  User,
+  School,
+  GraduationCap,
+  Target,
+  Sparkles,
+  BookOpen,
 } from "lucide-react";
 
 export const ProfileView: React.FC = () => {
@@ -10,20 +15,16 @@ export const ProfileView: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [name, setName] = useState(user.name);
-  const [email, setEmail] = useState(user.email || "student@studymate.ai");
-  const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || "+1 (555) 438-9201");
   const [institution, setInstitution] = useState(user.institution || "Stanford University");
-  const [educationLevel, setEducationLevel] = useState(user.educationLevel);
+  const [educationLevel, setEducationLevel] = useState(user.educationLevel || "Undergraduate");
   const [bio, setBio] = useState(user.bio || "");
   const [studyGoals, setStudyGoals] = useState(user.studyGoals || "");
-  const [studyPreference, setStudyPreference] = useState(user.studyPreference);
+  const [studyPreference, setStudyPreference] = useState(user.studyPreference || "solo");
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     updateUser({
       name,
-      email,
-      phoneNumber,
       institution,
       educationLevel,
       bio,
@@ -53,13 +54,9 @@ export const ProfileView: React.FC = () => {
               <span className="text-xs text-[#1B2A4A]/70">{user.institution}</span>
             </div>
             <h1 className="text-2xl font-black text-[#0A1931]">{user.name}</h1>
-            <p className="text-xs text-[#1B2A4A]/70 mt-0.5">{user.email}</p>
             <p className="text-xs text-[#1B2A4A]/80 mt-1 flex items-center gap-1.5 font-medium">
-              <Phone className="w-3 h-3 text-[#0A1931]" />
-              <span>{user.phoneNumber || "+1 (555) 438-9201"}</span>
-              <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                Group Discoverable
-              </span>
+              <Sparkles className="w-3.5 h-3.5 text-[#6366F1]" />
+              <span>{user.streakDays} Day Study Streak &bull; {user.xp || 0} XP</span>
             </p>
           </div>
         </div>
@@ -69,8 +66,8 @@ export const ProfileView: React.FC = () => {
             onClick={() => setIsProfileSetupOpen(true)}
             className="px-4 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-xs font-bold text-[#0A1931] transition flex items-center gap-2 cursor-pointer shadow-xs"
           >
-            <Phone className="w-3.5 h-3.5 text-[#0A1931]" />
-            <span>Open Profile Front</span>
+            <User className="w-3.5 h-3.5 text-[#0A1931]" />
+            <span>Profile Details</span>
           </button>
           <button
             onClick={() => setIsEditing(!isEditing)}
@@ -98,37 +95,6 @@ export const ProfileView: React.FC = () => {
                   className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
                   required
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#0A1931] mb-1">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-[#0A1931] mb-1 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-[#0A1931]" />
-                  <span>Phone Number (For Group Invites)</span>
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+1 (555) 000-0000"
-                  className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
-                  required
-                />
-                <p className="text-[11px] text-[#1B2A4A]/70 mt-1">
-                  Enables peers and study partners to find you and invite you to groups.
-                </p>
               </div>
 
               <div>
@@ -162,16 +128,15 @@ export const ProfileView: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-bold text-[#0A1931] mb-1">
-                  Study Preference
+                  Study Pace
                 </label>
                 <select
                   value={studyPreference}
                   onChange={(e) => setStudyPreference(e.target.value as any)}
                   className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
                 >
-                  <option value="alone">Study Alone</option>
-                  <option value="group">Study in Groups</option>
-                  <option value="both">Both (Flexible)</option>
+                  <option value="solo">Self-Paced / Solo</option>
+                  <option value="flexible">Flexible / Adaptive</option>
                 </select>
               </div>
             </div>
@@ -182,6 +147,7 @@ export const ProfileView: React.FC = () => {
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 rows={2}
+                placeholder="Share a brief introduction or your study routine..."
                 className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
               />
             </div>
@@ -194,6 +160,7 @@ export const ProfileView: React.FC = () => {
                 value={studyGoals}
                 onChange={(e) => setStudyGoals(e.target.value)}
                 rows={2}
+                placeholder="What exams or milestones are you preparing for?"
                 className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs text-[#0A1931] focus:outline-none focus:border-[#0A1931]"
               />
             </div>

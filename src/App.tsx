@@ -8,8 +8,6 @@ import { LibraryView } from "./components/LibraryView";
 import { LearnView } from "./components/LearnView";
 import { MemoriseView } from "./components/MemoriseView";
 import { QuizzesView } from "./components/QuizzesView";
-import { GroupsView } from "./components/GroupsView";
-import { FriendsView } from "./components/FriendsView";
 import { StudyPlanView } from "./components/StudyPlanView";
 import { ProgressView } from "./components/ProgressView";
 import { ProfileView } from "./components/ProfileView";
@@ -39,10 +37,6 @@ const MainLayout: React.FC = () => {
         return <MemoriseView />;
       case "quizzes":
         return <QuizzesView />;
-      case "groups":
-        return <GroupsView />;
-      case "friends":
-        return <FriendsView />;
       case "plan":
         return <StudyPlanView />;
       case "progress":

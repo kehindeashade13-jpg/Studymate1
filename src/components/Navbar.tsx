@@ -1,39 +1,24 @@
 import React, { useState } from "react";
 import { useStudy } from "../context/StudyContext";
 import {
-  BookOpen,
   Plus,
-  Flame,
-  Zap,
   Bell,
-  Check,
-  CheckCheck,
-  Globe,
-  User,
-  Shield,
-  LogOut,
-  ChevronDown,
-  Sparkles,
   ArrowLeft,
   Menu,
 } from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const {
-    user,
     activeTab,
     setActiveTab,
     openAddMaterialModal,
-    setIsAssistantOpen,
     setIsSidebarOpen,
     notifications,
     markNotificationAsRead,
     clearAllNotifications,
-    setIsAuthModalOpen,
   } = useStudy();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
@@ -43,8 +28,6 @@ export const Navbar: React.FC = () => {
     learn: "Interactive Lesson",
     memorise: "Memorise & Flashcards",
     quizzes: "Quizzes & Practice",
-    groups: "Study Groups",
-    friends: "Find Friends",
     plan: "Study Plan",
     progress: "Progress & Badges",
     profile: "Student Profile",
@@ -106,7 +89,7 @@ export const Navbar: React.FC = () => {
           )}
         </div>
 
-        {/* Right Actions: Import, Streak, Notification Bell, Profile */}
+        {/* Right Actions: Import & Notification Bell */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Quick Import Button */}
           <button
@@ -118,17 +101,7 @@ export const Navbar: React.FC = () => {
             <span className="hidden md:inline">Import</span>
           </button>
 
-          {/* Warm Amber Streak Counter */}
-          <div
-            onClick={() => setActiveTab("progress")}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200/80 text-[#0F172A] text-xs font-bold cursor-pointer hover:bg-amber-100/70 transition shadow-2xs shrink-0"
-            title={`${user.streakDays} Day Study Streak`}
-          >
-            <Flame className="w-3.5 h-3.5 text-[#F59E0B] fill-[#F59E0B] shrink-0" />
-            <span className="text-[#0F172A] font-extrabold">{user.streakDays}d</span>
-          </div>
-
-          {/* Notification Bell (Guaranteed visibility with shrink-0) */}
+          {/* Notification Bell */}
           <div className="relative shrink-0">
             <button
               onClick={() => setIsNotifOpen(!isNotifOpen)}
@@ -186,20 +159,6 @@ export const Navbar: React.FC = () => {
               </div>
             )}
           </div>
-
-          {/* User Profile Avatar */}
-          <button
-            onClick={() => setActiveTab("profile")}
-            className="flex items-center p-0.5 rounded-xl hover:bg-slate-100 text-[#0F172A] transition cursor-pointer shrink-0"
-            title="User Profile"
-          >
-            <img
-              src={user.avatar || "/studymate_logo.jpg"}
-              alt={user.name}
-              referrerPolicy="no-referrer"
-              className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl object-cover ring-2 ring-[#6366F1]/20 border border-slate-200 shadow-2xs"
-            />
-          </button>
         </div>
       </div>
     </header>

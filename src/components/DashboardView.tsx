@@ -131,14 +131,7 @@ export const DashboardView: React.FC = () => {
     if (navigator?.clipboard?.writeText) {
       navigator.clipboard.writeText(shareText).catch(() => {});
     }
-    if (studyGroups && studyGroups.length > 0) {
-      sendGroupMessage(
-        studyGroups[0].id,
-        `📚 Shared deck "${mat.title}" with our study group! Practice flashcards & quizzes.`,
-        false
-      );
-    }
-    setToastMessage(`Shared "${mat.title}"! Link copied to clipboard.`);
+    setToastMessage(`Deck "${mat.title}" link copied to clipboard!`);
     triggerConfetti();
     setTimeout(() => setToastMessage(null), 3500);
   };

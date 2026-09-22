@@ -17,21 +17,19 @@ import {
 export const initialUser: UserProfile = {
   id: "user-me",
   name: "Student",
-  email: "student@studymate.ai",
-  phoneNumber: "+1 (555) 438-9201",
   avatar: "/studymate_logo.jpg",
   bio: "Passionate about active recall, spaced repetition, and turning study materials into understanding!",
   educationLevel: "Undergraduate",
   institution: "University",
   enrolledSubjects: ["Biology", "Mathematics", "Chemistry", "Computer Science", "History", "Business"],
   studyGoals: "Maintain a daily study habit and test understanding with active recall.",
-  studyPreference: "both",
+  studyPreference: "solo",
   xp: 298,
   streakDays: 0,
   lastActiveDate: new Date().toISOString(),
   isProfilePublic: true,
   allowFriendRequests: true,
-  allowGroupInvites: true,
+  allowGroupInvites: false,
 };
 
 // Start with empty materials - the app works purely with whatever the user uploads!

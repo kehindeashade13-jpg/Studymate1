@@ -403,7 +403,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let isMounted = true;
     async function loadServerStorage() {
       try {
-        const userId = user?.id || user?.email || "default_user";
+        const userId = user?.id || "default_user";
         const res = await fetch(`/api/storage/load?userId=${encodeURIComponent(userId)}`);
         const json = await res.json();
         if (isMounted && json.success && json.data) {
@@ -466,7 +466,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: user?.id || user?.email || "default_user",
+          userId: user?.id || "default_user",
           data: {
             materials,
             notes,
@@ -650,7 +650,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        userId: user?.id || user?.email || "default_user",
+        userId: user?.id || "default_user",
         materialId: id,
       }),
     })

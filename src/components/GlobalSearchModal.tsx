@@ -4,10 +4,6 @@ import { UniversalContentRenderer } from "./UniversalContentRenderer";
 import {
   Search,
   BookOpen,
-  Brain,
-  HelpCircle,
-  GraduationCap,
-  Users2,
   ArrowRight,
   X,
 } from "lucide-react";
@@ -19,8 +15,6 @@ export const GlobalSearchModal: React.FC = () => {
     materials,
     setActiveMaterial,
     setActiveTab,
-    studyGroups,
-    setActiveGroup,
   } = useStudy();
 
   const [query, setQuery] = useState("");
@@ -48,12 +42,6 @@ export const GlobalSearchModal: React.FC = () => {
       m.summary.toLowerCase().includes(query.toLowerCase())
   );
 
-  const filteredGroups = studyGroups.filter(
-    (g) =>
-      g.name.toLowerCase().includes(query.toLowerCase()) ||
-      g.subject.toLowerCase().includes(query.toLowerCase())
-  );
-
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-start justify-center p-4 pt-20 animate-in fade-in">
       <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
@@ -64,7 +52,7 @@ export const GlobalSearchModal: React.FC = () => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search notes, flashcards, step lessons, study groups..."
+            placeholder="Search notes, flashcards, step lessons, quizzes..."
             className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
             autoFocus
           />
@@ -82,7 +70,7 @@ export const GlobalSearchModal: React.FC = () => {
           {filteredMaterials.length > 0 && (
             <div>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 block mb-1">
-                Study Materials & Notes
+                Study Materials & Decks
               </span>
               <div className="space-y-1">
                 {filteredMaterials.map((m) => (
@@ -113,40 +101,9 @@ export const GlobalSearchModal: React.FC = () => {
             </div>
           )}
 
-          {/* Study Groups Section */}
-          {filteredGroups.length > 0 && (
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 block mb-1">
-                Study Circles & Groups
-              </span>
-              <div className="space-y-1">
-                {filteredGroups.map((g) => (
-                  <div
-                    key={g.id}
-                    onClick={() => {
-                      setActiveGroup(g);
-                      setActiveTab("groups");
-                      setIsSearchOpen(false);
-                    }}
-                    className="p-2.5 rounded-xl hover:bg-slate-800/80 flex items-center justify-between cursor-pointer transition"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <Users2 className="w-4 h-4 text-purple-400" />
-                      <div>
-                        <p className="font-semibold text-white">{g.name}</p>
-                        <p className="text-[10px] text-slate-400">{g.subject}</p>
-                      </div>
-                    </div>
-                    <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {filteredMaterials.length === 0 && filteredGroups.length === 0 && (
+          {filteredMaterials.length === 0 && (
             <div className="py-8 text-center text-slate-400">
-              No results found for "{query}".
+              No materials found for "{query}".
             </div>
           )}
         </div>

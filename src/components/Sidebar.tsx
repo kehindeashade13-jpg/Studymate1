@@ -42,8 +42,6 @@ const mainNavItems: NavItem[] = [
   { tab: "memorise", label: "Flashcards", icon: Brain, badge: "Recall" },
   { tab: "quizzes", label: "Quizzes & Tests", icon: HelpCircle },
   { tab: "learn", label: "Step Lessons", icon: GraduationCap },
-  { tab: "groups", label: "Study Groups", icon: Users2, badge: "Chat" },
-  { tab: "friends", label: "Find Friends", icon: UserPlus },
   { tab: "plan", label: "Study Plan", icon: CalendarDays },
   { tab: "progress", label: "Progress & Stats", icon: BarChart3 },
   { tab: "profile", label: "Profile", icon: UserCircle },

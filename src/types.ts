@@ -23,7 +23,7 @@ export type SourceType =
 export interface UserProfile {
   id: string;
   name: string;
-  email: string;
+  email?: string;
   phoneNumber?: string;
   avatar: string;
   bio: string;
@@ -31,13 +31,13 @@ export interface UserProfile {
   institution: string;
   enrolledSubjects: StudySubject[];
   studyGoals: string;
-  studyPreference: "solo" | "group" | "both";
+  studyPreference: "solo" | "group" | "both" | "flexible";
   xp: number;
   streakDays: number;
   lastActiveDate: string;
-  isProfilePublic: boolean;
-  allowFriendRequests: boolean;
-  allowGroupInvites: boolean;
+  isProfilePublic?: boolean;
+  allowFriendRequests?: boolean;
+  allowGroupInvites?: boolean;
 }
 
 export interface MaterialChunk {
