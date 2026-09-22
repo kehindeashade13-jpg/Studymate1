@@ -1,0 +1,34 @@
+{
+  "materials": [],
+  "notes": {},
+  "memorisePacks": {},
+  "quizzes": {},
+  "lessons": {},
+  "studyGroups": [],
+  "groupMessages": {},
+  "friends": [],
+  "studyPlan": null,
+  "user": {
+    "id": "default_user",
+    "name": "Student",
+    "avatar": "/studymate_logo.jpg",
+    "bio": "Passionate about active recall, spaced repetition, and turning study materials into understanding!",
+    "educationLevel": "Undergraduate",
+    "institution": "University",
+    "enrolledSubjects": [
+      "Biology",
+      "Mathematics",
+      "Chemistry",
+      "Computer Science",
+      "History",
+      "Business"
+    ],
+    "studyGoals": "Maintain a daily study habit and test understanding with active recall.",
+    "studyPreference": "solo",
+    "xp": 0,
+    "streakDays": 0,
+    "isProfilePublic": true,
+    "allowFriendRequests": true,
+    "allowGroupInvites": false
+  }
+}

@@ -821,7 +821,7 @@ export const AddMaterialModal: React.FC = () => {
                       }
                     }
                   }}
-                  placeholder="e.g., GST 102 Communication in English"
+                  placeholder="e.g., Introduction to Neural Networks or Cell Biology"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] transition"
                 />
               </div>
@@ -847,7 +847,7 @@ export const AddMaterialModal: React.FC = () => {
                       setSubject(detectSubjectFromCodeOrTitle(val));
                     }
                   }}
-                  placeholder="e.g., GST 102, BIO 101"
+                  placeholder="e.g., CS 101, BIO 201"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-300 text-sm font-bold text-[#0A1931] placeholder-slate-400 focus:outline-none focus:border-[#0A1931] uppercase transition"
                 />
               </div>

@@ -409,27 +409,12 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isMounted && json.success && json.data) {
           const d = json.data;
           if (Array.isArray(d.materials)) {
-            setMaterials((prev) => {
-              const map = new Map<string, StudyMaterial>();
-              // Add server materials
-              for (const m of d.materials) {
-                if (m && m.id) {
-                  map.set(m.id, sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
-                }
-              }
-              // Merge existing local materials (including ones uploaded before reload or during initialization)
-              for (const m of prev) {
-                if (m && m.id && !map.has(m.id)) {
-                  map.set(m.id, sanitizeMaterial(m));
-                }
-              }
-              return Array.from(map.values());
-            });
+            setMaterials(d.materials.map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) })));
           }
-          if (d.notes && Object.keys(d.notes).length > 0) setNotes((prev) => ({ ...prev, ...d.notes }));
-          if (d.memorisePacks && Object.keys(d.memorisePacks).length > 0) setMemorisePacks((prev) => ({ ...prev, ...d.memorisePacks }));
-          if (d.quizzes && Object.keys(d.quizzes).length > 0) setQuizzes((prev) => ({ ...prev, ...d.quizzes }));
-          if (d.lessons && Object.keys(d.lessons).length > 0) setLessons((prev) => ({ ...prev, ...d.lessons }));
+          if (d.notes) setNotes(d.notes);
+          if (d.memorisePacks) setMemorisePacks(d.memorisePacks);
+          if (d.quizzes) setQuizzes(d.quizzes);
+          if (d.lessons) setLessons(d.lessons);
           if (Array.isArray(d.studyGroups) && d.studyGroups.length > 0) setStudyGroups(d.studyGroups);
           if (d.groupMessages && Object.keys(d.groupMessages).length > 0) setGroupMessages((prev) => ({ ...prev, ...d.groupMessages }));
           if (Array.isArray(d.friends) && d.friends.length > 0) setFriends(d.friends);
