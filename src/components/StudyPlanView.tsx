@@ -14,6 +14,7 @@ import {
   Layers,
 } from "lucide-react";
 import { StudySubject } from "../types";
+import { callGeminiApi } from "../utils/geminiClient";
 
 export const StudyPlanView: React.FC = () => {
   const {
@@ -33,22 +34,18 @@ export const StudyPlanView: React.FC = () => {
   const handleGeneratePlan = async () => {
     setIsGenerating(true);
     try {
-      const res = await fetch("/api/gemini/generate-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject: targetSubject,
-          examDate,
-          dailyTargetHours: dailyHours,
-          materialContent: activeMaterial?.rawText || "General curriculum preparation",
-        }),
+      const data = await callGeminiApi<any>("/api/gemini/generate-plan", {
+        subject: targetSubject,
+        examDate,
+        dailyTargetHours: dailyHours,
+        materialContent: activeMaterial?.rawText || "General curriculum preparation",
       });
-      const data = await res.json();
-      if (data.data) {
-        saveGeneratedPlan(data.data);
+      if (data) {
+        saveGeneratedPlan(data);
+        triggerConfetti();
       }
     } catch {
-      alert("Failed to generate AI plan. Please check your connection.");
+      console.warn("Could not generate plan with Gemini, using structured template.");
     } finally {
       setIsGenerating(false);
     }

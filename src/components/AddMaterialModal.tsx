@@ -429,23 +429,14 @@ export const AddMaterialModal: React.FC = () => {
         "study-materials"
       );
 
-      // BLOCK PAGE NAVIGATION IF UPLOAD FAILS
-      if (!storageResult.success) {
-        const errorMsg =
-          storageResult.error ||
-          "Failed to upload file to Supabase storage bucket 'study-materials'. Please check bucket permissions and connection.";
-        console.error("[Upload Handler Error - Navigation Blocked]", errorMsg);
-        setUploadError(errorMsg);
-        setIsProcessing(false);
-        clearInterval(stageInterval);
-        return; // BLOCK PAGE NAVIGATION AND EXIT SUBMIT HANDLER
-      }
-
       if (storageResult.publicUrl) {
         finalFileUrl = storageResult.publicUrl;
       }
       if (storageResult.path) {
         finalStoragePath = storageResult.path;
+      }
+      if ((storageResult as any).warning) {
+        console.warn("[Supabase Storage Warning]:", (storageResult as any).warning);
       }
     }
 

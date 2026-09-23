@@ -18,6 +18,7 @@ import {
 import { QuizQuestion } from "../types";
 import { CleanFormattedText } from "./CleanFormattedText";
 import { generateDiagnosticQuestions } from "../utils/studyTransformer";
+import { callGeminiApi } from "../utils/geminiClient";
 
 export const QuizzesView: React.FC = () => {
   const {
@@ -173,19 +174,14 @@ export const QuizzesView: React.FC = () => {
     setIsGeneratingQuiz(true);
     try {
       const randomVariant = Math.floor(Math.random() * 5) + 1;
-      const res = await fetch("/api/gemini/generate-quiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: activeMaterial.title,
-          content: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
-          questionCount: 20,
-          variant: randomVariant,
-        }),
+      const data = await callGeminiApi<any>("/api/gemini/generate-quiz", {
+        title: activeMaterial.title,
+        content: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
+        questionCount: 20,
+        variant: randomVariant,
       });
-      const data = await res.json();
-      if (data.data) {
-        saveGeneratedQuiz(activeMaterial.id, data.data);
+      if (data) {
+        saveGeneratedQuiz(activeMaterial.id, data);
         handleRestart();
         triggerConfetti();
       }

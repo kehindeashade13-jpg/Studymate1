@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { RepetitionRating, Flashcard, FillInTheBlank, Mnemonic } from "../types";
 import { CleanFormattedText } from "./CleanFormattedText";
+import { callGeminiApi } from "../utils/geminiClient";
 
 export const MemoriseView: React.FC = () => {
   const {
@@ -50,17 +51,12 @@ export const MemoriseView: React.FC = () => {
     if (!activeMaterial || isGeneratingFlashcards) return;
     setIsGeneratingFlashcards(true);
     try {
-      const res = await fetch("/api/gemini/generate-flashcards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: activeMaterial.title,
-          text: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
-        }),
+      const data = await callGeminiApi<any>("/api/gemini/generate-flashcards", {
+        title: activeMaterial.title,
+        text: activeMaterial.rawText || activeMaterial.content || activeMaterial.summary || "",
       });
-      const data = await res.json();
-      if (data.data) {
-        saveGeneratedMemorise(activeMaterial.id, data.data);
+      if (data) {
+        saveGeneratedMemorise(activeMaterial.id, data);
         triggerConfetti();
         setCurrentCardIndex(0);
         setIsFlipped(false);

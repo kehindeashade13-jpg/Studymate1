@@ -15,8 +15,12 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // Lazy Gemini client helper
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+  const apiKey =
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY ||
+    process.env.GOOGLE_API_KEY ||
+    process.env.VITE_GOOGLE_API_KEY;
+  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey.includes("placeholder")) {
     return null;
   }
   return new GoogleGenAI({
@@ -2978,4 +2982,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only start the standalone listener if not running in a Vercel Serverless Function environment
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
+  startServer();
+}
+
+export { app };
+export default app;

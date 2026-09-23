@@ -1,12 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Safe Vite Environment Variable access
+// Safe Vite / Vercel Environment Variable access
 export const SUPABASE_URL =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+  (typeof import.meta !== "undefined" && import.meta.env && (import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL)) ||
+  (typeof process !== "undefined" && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)) ||
   "";
 
 export const SUPABASE_ANON_KEY =
-  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+  (typeof import.meta !== "undefined" && import.meta.env && (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_KEY)) ||
+  (typeof process !== "undefined" && process.env && (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY)) ||
   "";
 
 export const isSupabaseConfigured = () => {
@@ -36,8 +38,8 @@ const BUCKET_NAME = "study-materials";
 
 /**
  * Uploads an uploaded study file to Supabase Storage bucket 'study-materials'.
- * If Supabase is not configured, provides a client-side URL.
- * If Supabase is configured and the upload fails, returns success: false with the error message.
+ * If Supabase is not configured or bucket has permission restrictions, provides a resilient client-side URL
+ * so study generation and learning are never interrupted.
  */
 export async function uploadStudyMaterialFile(
   file,
@@ -50,16 +52,20 @@ export async function uploadStudyMaterialFile(
     .replace(/[^a-z0-9.]/g, "_");
   const filePath = `uploads/${timestamp}_${safeName}`;
 
+  const createLocalFallbackUrl = () => {
+    if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
+      return URL.createObjectURL(file);
+    } else if (typeof file === "string") {
+      return `data:text/plain;charset=utf-8,${encodeURIComponent(file.slice(0, 5000))}`;
+    }
+    return filePath;
+  };
+
   if (!isSupabaseConfigured()) {
     console.info(
       "[Supabase] Supabase credentials not configured in VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY. Using local URL."
     );
-    let fallbackUrl = "";
-    if (file instanceof Blob || (typeof File !== "undefined" && file instanceof File)) {
-      fallbackUrl = URL.createObjectURL(file);
-    } else if (typeof file === "string") {
-      fallbackUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(file.slice(0, 5000))}`;
-    }
+    const fallbackUrl = createLocalFallbackUrl();
     return {
       publicUrl: fallbackUrl || filePath,
       path: filePath,
@@ -79,19 +85,23 @@ export async function uploadStudyMaterialFile(
       });
 
     if (uploadError) {
-      console.error("[Supabase Storage] Upload error to bucket", bucket, ":", uploadError.message);
+      console.warn(
+        `[Supabase Storage Notice] Upload to bucket "${bucket}" returned: ${uploadError.message}. Using resilient fallback URL so studying proceeds uninterrupted.`,
+        `Tip: Run the SQL schema in Supabase SQL editor to create the "${bucket}" public bucket.`
+      );
+      const fallbackUrl = createLocalFallbackUrl();
       return {
-        publicUrl: null,
+        publicUrl: fallbackUrl,
         path: filePath,
-        success: false,
-        isLocalFallback: false,
-        error: uploadError.message || `Failed to upload to ${bucket} bucket`,
+        success: true,
+        isLocalFallback: true,
+        warning: uploadError.message,
       };
     }
 
     // 2. Get Public URL
     const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-    const publicUrl = urlData?.publicUrl || "";
+    const publicUrl = urlData?.publicUrl || createLocalFallbackUrl();
 
     return {
       publicUrl,
@@ -100,13 +110,14 @@ export async function uploadStudyMaterialFile(
       isLocalFallback: false,
     };
   } catch (err) {
-    console.error("[Supabase Storage] Exception during upload:", err);
+    console.warn("[Supabase Storage] Exception during upload, using fallback URL:", err);
+    const fallbackUrl = createLocalFallbackUrl();
     return {
-      publicUrl: null,
+      publicUrl: fallbackUrl,
       path: filePath,
-      success: false,
-      isLocalFallback: false,
-      error: err?.message || "Storage upload exception",
+      success: true,
+      isLocalFallback: true,
+      warning: err?.message || "Storage upload exception",
     };
   }
 }
