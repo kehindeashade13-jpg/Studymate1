@@ -164,6 +164,21 @@ export function convertToSubscript(str: string): string {
   return str.split("").map((c) => SUBSCRIPT_MAP[c] || SUBSCRIPT_MAP[c.toLowerCase()] || c).join("");
 }
 
+export function scrubMetaPhrases(input: string): string {
+  if (!input || typeof input !== "string") return input || "";
+  let res = input;
+  res = res.replace(/\bnoted in (?:any|the|this|that|each)?\s*pr?ar?ag?graphs?\b/gi, "in this section");
+  res = res.replace(/\bnoted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "");
+  res = res.replace(/\bas noted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "");
+  res = res.replace(/\bas noted in (?:any|the|this)?\s*pr?ar?ag?graphs?\b/gi, "as covered in this section");
+  res = res.replace(/\bnoted in\s+pr?ar?ag?graphs?\b/gi, "in this section");
+  res = res.replace(/\bnoted in Section\s*\d+\b/gi, "");
+  res = res.replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?\s*\d+(?:-\d+)?/gi, "regarding $1");
+  res = res.replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?/gi, "regarding $1");
+  res = res.replace(/\s{2,}/g, " ").replace(/\s+\?/g, "?").trim();
+  return res;
+}
+
 /**
  * Normalizes encoding, strips corrupted mojibake and cleans unprintable artifacts.
  */
@@ -175,6 +190,7 @@ export function cleanMojibake(input: string): string {
   }
   // Standardize line endings
   res = res.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  res = scrubMetaPhrases(res);
   return res;
 }
 

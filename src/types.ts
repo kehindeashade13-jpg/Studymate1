@@ -81,6 +81,12 @@ export interface StudyNotes {
   topicTitle: string;
   subject: StudySubject;
   shortOverview: string;
+  subtopicsWithNotes?: {
+    subtopic: string;
+    paragraphReference?: string;
+    importantPoints: string[];
+    keyTakeaway?: string;
+  }[];
   keyConcepts: { title: string; description: string; keyTakeaway: string }[];
   definitions: { term: string; definition: string; context: string }[];
   importantDetails: string[];
@@ -191,7 +197,10 @@ export interface LessonStep {
   lessonNumber: number;
   title: string;
   subtitle: string;
-  content: string;
+  content: string; // The extracted lesson note from this section of the uploaded file
+  sectionLabel?: string;
+  importantPoints?: string[];
+  keyTakeaway?: string;
   analogy: string;
   keyTerms: string[];
   knowledgeCheck: LessonQuestion;

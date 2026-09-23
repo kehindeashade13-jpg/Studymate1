@@ -13,6 +13,7 @@ import {
   Check,
   X,
   Zap,
+  FileText,
 } from "lucide-react";
 import { LessonStep, LessonQuestion } from "../types";
 import { create5QuestionsForLesson, repairLessonPack } from "../utils/studyTransformer";
@@ -113,7 +114,10 @@ export const LearnView: React.FC = () => {
   } = useStudy();
 
   const rawLessonPack = activeMaterial ? lessons[activeMaterial.id] : null;
-  const currentLessonPack = rawLessonPack && activeMaterial ? repairLessonPack(rawLessonPack, activeMaterial.title) : null;
+  const currentLessonPack =
+    rawLessonPack && activeMaterial
+      ? repairLessonPack(rawLessonPack, activeMaterial.title, activeMaterial.rawText, activeMaterial.subject)
+      : null;
 
   const [currentStepIdx, setCurrentStepIdx] = useState<number>(
     currentLessonPack ? currentLessonPack.currentStepIndex || 0 : 0
@@ -160,11 +164,20 @@ export const LearnView: React.FC = () => {
   const totalSteps = currentLessonPack.lessons.length;
   const progressPercent = Math.round(((currentStepIdx + (currentStep.completed ? 1 : 0)) / totalSteps) * 100);
 
-  // Guarantee exactly 5 questions for this lesson
+  // Guarantee exactly 5 questions for this lesson generated directly from the note
   const questionsList: LessonQuestion[] =
     currentStep.questions && currentStep.questions.length >= 5
       ? currentStep.questions
-      : create5QuestionsForLesson(currentStep.lessonNumber || currentStepIdx + 1, currentStep.title, activeMaterial.title);
+      : create5QuestionsForLesson(
+          currentStep.lessonNumber || currentStepIdx + 1,
+          currentStep.title,
+          activeMaterial.title,
+          {
+            noteContent: currentStep.content,
+            importantPoints: currentStep.importantPoints,
+            keyTerms: currentStep.keyTerms,
+          }
+        );
 
   const currentQ = questionsList[activeQuestionIdx] || questionsList[0];
   const selectedAnswer = selectedAnswers[activeQuestionIdx] ?? null;
@@ -187,7 +200,6 @@ export const LearnView: React.FC = () => {
 
     if (isCorrect) {
       triggerConfetti();
-      addXP(25);
       // If all 5 questions for this lesson mastered, mark step complete
       const newCorrectCount = masteredQuestionsCount + (correctAnswers[activeQuestionIdx] ? 0 : 1);
       if (newCorrectCount >= questionsList.length) {
@@ -277,9 +289,66 @@ export const LearnView: React.FC = () => {
           <p className="text-xs sm:text-sm text-slate-300 mt-1">{currentStep.subtitle}</p>
         </div>
 
-        {/* Lesson Body Content */}
-        <div className="pt-2 text-slate-100 text-sm sm:text-base leading-relaxed">
-          <CleanFormattedText content={currentStep.content} className="text-slate-100 text-sm sm:text-base leading-relaxed" />
+        {/* Extracted Study Note (From Uploaded File) */}
+        <div className="rounded-2xl bg-slate-800/60 border border-slate-700/80 overflow-hidden shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5 bg-slate-800/90 border-b border-slate-700/80">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                  <span>Lesson Note (Extracted from Document)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300">
+                    Section {currentStep.lessonNumber || currentStepIdx + 1} of 6
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {currentStep.sectionLabel || `Comprehensive notes extracted for Lesson ${currentStep.lessonNumber || currentStepIdx + 1}`}
+                </p>
+              </div>
+            </div>
+            <span className="text-[11px] font-medium text-slate-300 bg-slate-900/70 px-2.5 py-1 rounded-md border border-slate-700/60">
+              {activeMaterial.title}
+            </span>
+          </div>
+
+          <div className="p-5 sm:p-6 space-y-4">
+            {/* Note text rendered nicely */}
+            {formatLessonWriteup(currentStep.content)}
+
+            {/* Extracted Important Points & Mechanisms */}
+            {currentStep.importantPoints && currentStep.importantPoints.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-700/60 space-y-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Key Points & Mechanisms Extracted from File</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {currentStep.importantPoints.map((pt, pIdx) => (
+                    <div
+                      key={pIdx}
+                      className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-200 flex items-start gap-2"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                      <span>{pt}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* High-Yield Key Takeaway */}
+            {currentStep.keyTakeaway && (
+              <div className="mt-3 p-3.5 rounded-xl bg-blue-950/40 border border-blue-800/40 flex items-start gap-2.5 text-xs text-blue-200">
+                <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-blue-300 block font-bold mb-0.5">High-Yield Takeaway:</strong>
+                  <span>{currentStep.keyTakeaway}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Intuitive Analogy Box */}
@@ -317,9 +386,14 @@ export const LearnView: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <HelpCircle className="w-5 h-5 text-amber-400" />
-              <h3 className="text-sm font-bold text-white">
-                5 Practice Questions for Lesson {currentStep.lessonNumber || currentStepIdx + 1}
-              </h3>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  5 Practice Questions for Lesson {currentStep.lessonNumber || currentStepIdx + 1}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  Generated directly from the extracted lesson note above
+                </p>
+              </div>
             </div>
             <span className="text-xs font-semibold text-amber-300 bg-amber-950/60 border border-amber-700/60 px-3 py-1 rounded-full w-fit">
               {masteredQuestionsCount} of 5 Answered Correctly

@@ -87,6 +87,41 @@ function sanitizeJsonString(str: string): string {
   return str.replace(/,\s*([}\]])/g, "$1");
 }
 
+// Clean any meta-references such as "noted in any paragraph", "noted in paragraph X", etc.
+function cleanAcademicText(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  return text
+    .replace(/\bnoted in (?:any|the|this|that|each)?\s*pr?ar?ag?graphs?\b/gi, "in this section")
+    .replace(/\bnoted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "")
+    .replace(/\bas noted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "")
+    .replace(/\bas noted in (?:any|the|this)?\s*pr?ar?ag?graphs?\b/gi, "as covered in this section")
+    .replace(/\bnoted in\s+pr?ar?ag?graphs?\b/gi, "in this section")
+    .replace(/\bnoted in Section\s*\d+\b/gi, "")
+    .replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?\s*\d+(?:-\d+)?/gi, "regarding $1")
+    .replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?/gi, "regarding $1")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+\?/g, "?")
+    .trim();
+}
+
+function sanitizeObjectAcademicText(obj: any): any {
+  if (!obj) return obj;
+  if (typeof obj === "string") {
+    return cleanAcademicText(obj);
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeObjectAcademicText);
+  }
+  if (typeof obj === "object") {
+    const res: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      res[key] = sanitizeObjectAcademicText(obj[key]);
+    }
+    return res;
+  }
+  return obj;
+}
+
 // Clean and extract valid JSON response from Gemini, handling markdown fences,
 // trailing commentary, and V8 'Unexpected non-whitespace character after JSON' errors
 function cleanJsonResponse(raw: string): any {
@@ -96,9 +131,12 @@ function cleanJsonResponse(raw: string): any {
 
   const trimmed = raw.trim();
 
+  // Helper to sanitize final parsed object
+  const finalize = (parsed: any) => sanitizeObjectAcademicText(parsed);
+
   // 1. Direct parse attempt
   try {
-    return JSON.parse(trimmed);
+    return finalize(JSON.parse(trimmed));
   } catch (err: any) {
     // Specifically handle V8's "Unexpected non-whitespace character after JSON at position X"
     const posMatch = err?.message?.match(/at position (\d+)/i);
@@ -106,7 +144,7 @@ function cleanJsonResponse(raw: string): any {
       const pos = parseInt(posMatch[1], 10);
       if (pos > 0 && pos <= trimmed.length) {
         try {
-          return JSON.parse(trimmed.slice(0, pos).trim());
+          return finalize(JSON.parse(trimmed.slice(0, pos).trim()));
         } catch (_) {}
       }
     }
@@ -116,19 +154,19 @@ function cleanJsonResponse(raw: string): any {
   const balanced = extractBalancedJson(trimmed);
   if (balanced) {
     try {
-      return JSON.parse(balanced);
+      return finalize(JSON.parse(balanced));
     } catch (err: any) {
       const posMatch = err?.message?.match(/at position (\d+)/i);
       if (posMatch) {
         const pos = parseInt(posMatch[1], 10);
         if (pos > 0 && pos <= balanced.length) {
           try {
-            return JSON.parse(balanced.slice(0, pos).trim());
+            return finalize(JSON.parse(balanced.slice(0, pos).trim()));
           } catch (_) {}
         }
       }
       try {
-        return JSON.parse(sanitizeJsonString(balanced));
+        return finalize(JSON.parse(sanitizeJsonString(balanced)));
       } catch (_) {}
     }
   }
@@ -139,21 +177,21 @@ function cleanJsonResponse(raw: string): any {
   if (codeBlockMatch) {
     unFenced = codeBlockMatch[1].trim();
     try {
-      return JSON.parse(unFenced);
+      return finalize(JSON.parse(unFenced));
     } catch (err: any) {
       const posMatch = err?.message?.match(/at position (\d+)/i);
       if (posMatch) {
         const pos = parseInt(posMatch[1], 10);
         if (pos > 0 && pos <= unFenced.length) {
           try {
-            return JSON.parse(unFenced.slice(0, pos).trim());
+            return finalize(JSON.parse(unFenced.slice(0, pos).trim()));
           } catch (_) {}
         }
       }
       const balancedFromFence = extractBalancedJson(unFenced);
       if (balancedFromFence) {
         try {
-          return JSON.parse(balancedFromFence);
+          return finalize(JSON.parse(balancedFromFence));
         } catch (_) {}
       }
     }
@@ -165,10 +203,10 @@ function cleanJsonResponse(raw: string): any {
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     const candidate = trimmed.slice(firstBrace, lastBrace + 1);
     try {
-      return JSON.parse(candidate);
+      return finalize(JSON.parse(candidate));
     } catch (_) {
       try {
-        return JSON.parse(sanitizeJsonString(candidate));
+        return finalize(JSON.parse(sanitizeJsonString(candidate)));
       } catch (_) {}
     }
   }
@@ -178,10 +216,10 @@ function cleanJsonResponse(raw: string): any {
   if (firstBracket !== -1 && lastBracket > firstBracket) {
     const candidate = trimmed.slice(firstBracket, lastBracket + 1);
     try {
-      return JSON.parse(candidate);
+      return finalize(JSON.parse(candidate));
     } catch (_) {
       try {
-        return JSON.parse(sanitizeJsonString(candidate));
+        return finalize(JSON.parse(sanitizeJsonString(candidate)));
       } catch (_) {}
     }
   }
@@ -229,12 +267,12 @@ function cleanJsonResponse(raw: string): any {
         if (unclosed === "{") candidate += "}";
         else if (unclosed === "[") candidate += "]";
       }
-      return JSON.parse(sanitizeJsonString(candidate));
+      return finalize(JSON.parse(sanitizeJsonString(candidate)));
     }
   } catch (_) {}
 
   // Last attempt: standard JSON.parse which will provide descriptive syntax error
-  return JSON.parse(trimmed);
+  return finalize(JSON.parse(trimmed));
 }
 
 // Resilient candidate models with automatic failover to prevent 503 high-demand and 429 quota errors
@@ -572,24 +610,256 @@ ${rawDocText.slice(0, 30000)}
   }
 });
 
-// 1. Analyze study material endpoint
+// Helper to scan document paragraph by paragraph, extract subtopics and note important points
+interface ScannedParagraphUnit {
+  subtopic: string;
+  paragraphIndex: number;
+  paragraphText: string;
+  importantPoints: string[];
+}
+
+interface DocumentScanResult {
+  title: string;
+  summary: string;
+  subtopics: string[];
+  importantPoints: string[];
+  paragraphs: ScannedParagraphUnit[];
+  subtopicsWithNotes: {
+    subtopic: string;
+    paragraphReference: string;
+    importantPoints: string[];
+    keyTakeaway: string;
+  }[];
+  definitions: { term: string; definition: string }[];
+  keyConcepts: { concept: string; explanation: string; importance: "high" | "medium" }[];
+  chunks: {
+    chunkId: string;
+    title: string;
+    sourceReference: string;
+    summary: string;
+    content: string;
+    keyTerms: string[];
+  }[];
+  formulas: { name: string; formula: string; explanation: string }[];
+  potentialExamQuestions: { question: string; type: string; keyPoint: string }[];
+}
+
+function scanDocumentStructure(rawContent: string, customTitle?: string): DocumentScanResult {
+  const content = (rawContent || "").trim();
+  const rawParagraphs = content
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 20 && !/^(\d+|page \d+|footer|header)$/i.test(p));
+
+  const blocks = rawParagraphs.length >= 2 ? rawParagraphs : content.split(/\n+/).map(p => p.trim()).filter(p => p.length > 25);
+  const activeParagraphs = blocks.length > 0 ? blocks : [content];
+
+  const detectedTitle = customTitle || activeParagraphs[0]?.split("\n")[0]?.replace(/^[#*•\-\d.\s]+/, "").slice(0, 70).trim() || "Study Material";
+
+  const subtopicsSet = new Set<string>();
+  const scannedUnits: ScannedParagraphUnit[] = [];
+  const allImportantPoints: string[] = [];
+  const definitions: { term: string; definition: string }[] = [];
+  const keyConcepts: { concept: string; explanation: string; importance: "high" | "medium" }[] = [];
+  const formulas: { name: string; formula: string; explanation: string }[] = [];
+
+  let currentSubtopic = `${detectedTitle} Core Concepts`;
+
+  activeParagraphs.forEach((para, idx) => {
+    const lines = para.split("\n").map(l => l.trim()).filter(Boolean);
+    const firstLine = lines[0] || "";
+
+    // Check if first line is a heading/subtopic
+    const headingMatch = firstLine.match(/^(?:#{1,4}\s+|chapter\s+\d+:?\s*|topic\s+\d+:?\s*|section\s+\d+:?\s*|\d+\.\s+)(.+)$/i);
+    const isShortHeader = firstLine.length < 75 && (firstLine.endsWith(":") || /^[A-Z0-9\s,\-:()]{4,}$/.test(firstLine) || (!firstLine.includes(".") && lines.length > 1));
+    
+    if (headingMatch && headingMatch[1].trim().length > 3) {
+      currentSubtopic = headingMatch[1].trim().replace(/[*_#]/g, "");
+      subtopicsSet.add(currentSubtopic);
+    } else if (isShortHeader && firstLine.length > 3) {
+      currentSubtopic = firstLine.replace(/[:*_#]/g, "").trim();
+      subtopicsSet.add(currentSubtopic);
+    } else if (subtopicsSet.size === 0 && idx === 0) {
+      currentSubtopic = `${detectedTitle} Foundations`;
+      subtopicsSet.add(currentSubtopic);
+    }
+
+    // Extract sentences from paragraph
+    const sentences = para
+      .replace(/^[#*_•\-\d.\s]+/, "")
+      .split(/(?<=[.?!])\s+/)
+      .map(s => s.trim())
+      .filter(s => s.length > 20 && s.length < 350 && !/uploaded study file/i.test(s));
+
+    const paraImportantPoints: string[] = [];
+
+    for (const sent of sentences) {
+      // 1. Definition detection: "X is defined as Y", "X refers to Y", "X: Y"
+      const defMatch = sent.match(/^([A-Z][a-zA-Z0-9\s\-']{2,45})\s+(?:is defined as|refers to|is considered|means|is the process of|describes)\s+(.+)$/i);
+      const colonMatch = sent.match(/^([A-Z][a-zA-Z0-9\s\-']{2,45}):\s+(.+)$/);
+
+      if (defMatch && definitions.length < 25) {
+        const term = defMatch[1].trim();
+        const def = defMatch[2].trim();
+        if (!definitions.some(d => d.term.toLowerCase() === term.toLowerCase())) {
+          definitions.push({ term, definition: def });
+          paraImportantPoints.push(`**${term}**: ${def}`);
+        }
+      } else if (colonMatch && definitions.length < 25) {
+        const term = colonMatch[1].trim();
+        const def = colonMatch[2].trim();
+        if (!definitions.some(d => d.term.toLowerCase() === term.toLowerCase())) {
+          definitions.push({ term, definition: def });
+          paraImportantPoints.push(`**${term}**: ${def}`);
+        }
+      }
+
+      // 2. High-yield causal, quantitative, mechanism, formula, or governing rule points
+      const isHighYield =
+        /(?:because|leads to|results in|causes|triggers|requires|must be|essential|crucial|proportional|inversely|mechanism|governed by|functions to|responsible for|consists of|classified into|principle|formula|equation|threshold|optimum|equilibrium|important|characteristic|distinction|advantage|disadvantage|step)/i.test(sent) ||
+        /\b(?:\d+(?:\.\d+)?%|\d+\s*(?:°C|K|atm|psi|mg|ml|mol|kg|s|min|hours?|J|kJ|Pa|M|nm|μm))\b/.test(sent);
+
+      if (isHighYield && !paraImportantPoints.includes(sent) && paraImportantPoints.length < 4) {
+        paraImportantPoints.push(sent);
+      }
+    }
+
+    // Fallback to first informative sentence if none matched regex
+    if (paraImportantPoints.length === 0 && sentences.length > 0) {
+      paraImportantPoints.push(sentences[0]);
+      if (sentences[1]) paraImportantPoints.push(sentences[1]);
+    }
+
+    paraImportantPoints.forEach(pt => {
+      if (!allImportantPoints.includes(pt)) {
+        allImportantPoints.push(pt);
+      }
+    });
+
+    scannedUnits.push({
+      subtopic: currentSubtopic,
+      paragraphIndex: idx + 1,
+      paragraphText: para,
+      importantPoints: paraImportantPoints,
+    });
+  });
+
+  if (subtopicsSet.size === 0) {
+    subtopicsSet.add(`${detectedTitle} Foundations`);
+    subtopicsSet.add(`${detectedTitle} Mechanisms`);
+    subtopicsSet.add(`${detectedTitle} Key Applications`);
+  }
+  const subtopicsList = Array.from(subtopicsSet).slice(0, 10);
+
+  // Group into subtopicsWithNotes
+  const subtopicsWithNotes = subtopicsList.map((st, i) => {
+    const matchingUnits = scannedUnits.filter(u => u.subtopic === st);
+    const unitPoints = matchingUnits.flatMap(u => u.importantPoints);
+    const uniquePoints = Array.from(new Set(unitPoints)).slice(0, 5);
+    const startPara = matchingUnits[0]?.paragraphIndex || (i + 1);
+    const endPara = matchingUnits[matchingUnits.length - 1]?.paragraphIndex || startPara;
+
+    return {
+      subtopic: st,
+      paragraphReference: startPara === endPara ? `Section ${startPara}` : `Sections ${startPara}-${endPara}`,
+      importantPoints: uniquePoints.length > 0 ? uniquePoints : [
+        `Core mechanism, operational parameters, and governing rules for ${st}.`,
+        `Direct exam focus: understanding boundary constraints and diagnostic distinctions for ${st}.`,
+      ],
+      keyTakeaway: `Master the causal factors and definitions established in ${st} to solve complex examination questions.`,
+    };
+  });
+
+  // Key concepts
+  if (definitions.length > 0) {
+    definitions.slice(0, 8).forEach((d, i) => {
+      keyConcepts.push({
+        concept: d.term,
+        explanation: d.definition,
+        importance: i < 3 ? "high" : "medium",
+      });
+    });
+  } else {
+    subtopicsList.slice(0, 6).forEach((st, i) => {
+      const relatedPt = scannedUnits.find(u => u.subtopic === st)?.importantPoints[0] || `Core theoretical framework governing ${st}.`;
+      keyConcepts.push({
+        concept: st,
+        explanation: relatedPt,
+        importance: i < 3 ? "high" : "medium",
+      });
+    });
+  }
+
+  // Chunks
+  const chunks = subtopicsWithNotes.slice(0, 5).map((swn, i) => ({
+    chunkId: `chunk-${i + 1}`,
+    title: swn.subtopic,
+    sourceReference: swn.paragraphReference,
+    summary: swn.importantPoints[0] || `Section covering ${swn.subtopic}`,
+    content: scannedUnits.filter(u => u.subtopic === swn.subtopic).map(u => u.paragraphText).join("\n\n").slice(0, 2500) || swn.importantPoints.join(" "),
+    keyTerms: [swn.subtopic, ...(definitions.slice(i * 2, i * 2 + 2).map(d => d.term))],
+  }));
+
+  // Potential exam questions
+  const potentialExamQuestions = subtopicsWithNotes.slice(0, 5).map((swn) => ({
+    question: `Explain how the mechanism and rules of ${swn.subtopic} operate under practical examination conditions.`,
+    type: "scenario" as const,
+    keyPoint: swn.importantPoints[0] || `Governing principles of ${swn.subtopic}`,
+  }));
+
+  return {
+    title: detectedTitle,
+    summary: `Comprehensive academic breakdown of ${detectedTitle}, synthesizing core concepts across ${subtopicsList.length} subtopics: ${subtopicsList.join(", ")}.`,
+    subtopics: subtopicsList,
+    importantPoints: allImportantPoints.slice(0, 25),
+    paragraphs: scannedUnits,
+    subtopicsWithNotes,
+    definitions: definitions.length > 0 ? definitions : subtopicsList.slice(0, 8).map(st => ({
+      term: st,
+      definition: `The structured conceptual domain, mechanisms, and rules covering ${st} within ${detectedTitle}.`,
+    })),
+    keyConcepts,
+    chunks,
+    formulas,
+    potentialExamQuestions,
+  };
+}
+
+// 1. Analyze study material endpoint: Scans paragraphs, subtopics, and important points
 app.post("/api/gemini/analyze", async (req, res) => {
-  const { title, content, sourceType } = req.body;
+  const { title, sourceType } = req.body;
+  const content = req.body.content || req.body.text || req.body.rawText;
   if (!content) {
     return res.status(400).json({ error: "Material content is required" });
   }
 
+  const scanned = scanDocumentStructure(content, title);
   const ai = getGeminiClient();
+
   if (ai) {
     try {
-      const prompt = `You are StudyMate AI, an expert educational system. Analyze the following study material thoroughly.
-Do not simply summarize. Organize the information into a structured learning architecture.
+      const prompt = `You are StudyMate AI, an expert academic content analyzer.
+Your task is to scan the uploaded study document paragraph by paragraph, extract all concrete subtopics, and note the most critical important points directly from the text.
 
-Material Title: ${title || "Study Material"}
+STRICT EXTRACTION DIRECTIVES:
+1. PARAGRAPH-BY-PARAGRAPH SCANNING:
+   - Carefully scan each paragraph and structural section in chronological order.
+   - Do NOT skip sections or use vague generalities.
+2. SUBTOPICS IDENTIFICATION:
+   - Extract the exact, specific subtopics and section headings covered across the document paragraphs.
+   - "subtopics": array of 4 to 10 specific subtopic titles identified directly across the file's paragraphs.
+3. NOTE IMPORTANT POINTS:
+   - "importantFacts": 8 to 20 concrete, high-yield important points extracted directly from the paragraphs (key rules, formulas, quantitative findings, causal mechanisms, conditions, or empirical principles).
+4. KEY CONCEPTS & DEFINITIONS:
+   - Extract genuine definitions and mechanisms explained in the text.
+5. ZERO GENERIC PLACEHOLDERS:
+   - NEVER use placeholder phrases like "Study Material", "Uploaded document", "General", or generic filler. Everything must come directly from the text.
+
+Material Title: ${title || scanned.title}
 Source Type: ${sourceType || "General"}
 Content:
 """
-${content.slice(0, 15000)}
+${content.slice(0, 18000)}
 """
 
 Return ONLY a valid JSON object with the following structure:
@@ -641,154 +911,90 @@ Return ONLY a valid JSON object with the following structure:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
-      return res.json({ success: true, data: parsed });
+      if (parsed && (parsed.subtopics?.length || parsed.definitions?.length || parsed.importantFacts?.length)) {
+        return res.json({
+          success: true,
+          data: {
+            ...parsed,
+            subtopics: parsed.subtopics && parsed.subtopics.length > 0 ? parsed.subtopics : scanned.subtopics,
+            importantFacts: parsed.importantFacts && parsed.importantFacts.length > 0 ? parsed.importantFacts : scanned.importantPoints,
+            definitions: parsed.definitions && parsed.definitions.length > 0 ? parsed.definitions : scanned.definitions,
+          },
+        });
+      }
     } catch (err: any) {
-      console.info("[Analyzer] Upstream AI busy, generating high-yield structured analysis fallback.");
+      console.info("[Analyzer] Upstream AI busy, using high-fidelity scanned paragraph analysis fallback.");
     }
   }
 
-  // High quality fallback
-  const firstLines = content.split("\n").filter((l: string) => l.trim().length > 0);
-  const detectedTitle = title || firstLines[0] || "Foundational Study Guide";
-
+  // High-fidelity scanned paragraph fallback
   return res.json({
     success: true,
     data: {
-      title: detectedTitle,
-      summary: `Comprehensive educational breakdown of ${detectedTitle}, synthesizing core principles, theoretical foundations, key terminology, and high-yield examination focus points.`,
+      title: scanned.title,
+      summary: scanned.summary,
       mainTopics: [
-        "Core Foundations & Principles",
+        `${scanned.title} Core Principles`,
         "Mechanisms & Operational Processes",
-        "Applied Systems & Real-World Examples",
-        "Critical Analysis & Common Misconceptions",
+        "Applied Analysis & Important Points",
+        "Examination Problem Solving",
       ],
-      subtopics: [
-        "Primary definitions and boundary conditions",
-        "Step-by-step procedural workflows",
-        "Comparative relationships and distinctions",
-        "Quantitative formulas and qualitative metrics",
-      ],
-      keyConcepts: [
-        {
-          concept: "Fundamental Theory",
-          explanation: "The primary underlying model explaining how components interact systematically.",
-          importance: "high",
-        },
-        {
-          concept: "Process Flow & Regulation",
-          explanation: "The regulatory checks and energetic constraints governing transitions in the system.",
-          importance: "high",
-        },
-        {
-          concept: "Equilibrium & Boundary Factors",
-          explanation: "Environmental thresholds that dictate efficiency, stability, and failure points.",
-          importance: "medium",
-        },
-      ],
-      definitions: [
-        {
-          term: detectedTitle.split(" ")[0] || "Active Principle",
-          definition: "The core operative mechanism responsible for transforming inputs into state changes.",
-        },
-        {
-          term: "Catalytic Factor",
-          definition: "An external or internal stimulus that accelerates reaction or comprehension velocity.",
-        },
-        {
-          term: "Systemic Invariance",
-          definition: "Properties that remain conserved despite perturbations in surrounding conditions.",
-        },
-      ],
-      importantFacts: [
-        "Recognized by standard curricula as a vital gateway concept for advanced mastery.",
-        "Retention improves by 68% when paired with spaced active recall and diagnostic testing.",
-        "Commonly tested on standardized subject exams under scenario-based evaluation.",
-      ],
+      subtopics: scanned.subtopics,
+      keyConcepts: scanned.keyConcepts,
+      definitions: scanned.definitions,
+      importantFacts: scanned.importantPoints,
       relationships: [
         {
-          itemA: "Theoretical Model",
-          itemB: "Practical Observation",
-          relationship: "The theoretical model predicts state changes confirmed by empirical data.",
-        },
-        {
-          itemA: "Input Variables",
-          itemB: "System Efficiency",
-          relationship: "Balanced inputs optimize throughput while preventing rate-limiting bottlenecks.",
+          itemA: scanned.subtopics[0] || "Foundational Principle",
+          itemB: scanned.subtopics[1] || "Analytical Mechanism",
+          relationship: `Understanding ${scanned.subtopics[0] || "core concepts"} is a direct prerequisite for applying ${scanned.subtopics[1] || "analytical methods"}.`,
         },
       ],
       examples: [
         {
-          title: "Standard Experimental Scenario",
-          description: "Applying the foundational principles to a controlled baseline test reveals linear progression.",
-        },
-        {
-          title: "Edge Case & Stress Condition",
-          description: "When inputs exceed normal thresholds, negative feedback loops activate to maintain homeostasis.",
+          title: `${scanned.title} Application Scenario`,
+          description: `Applying principles of ${scanned.subtopics[0] || scanned.title} to analyze diagnostic problem sets.`,
         },
       ],
-      formulas: [
-        {
-          name: "Efficiency Quotient",
-          formula: "η = (Work Output / Total Energy Input) × 100%",
-          explanation: "Quantifies the conversion ratio and highlights systemic losses.",
-        },
-      ],
-      importantDates: [
-        {
-          date: "Modern Paradigm (1953-Present)",
-          event: "Establishment of the integrated mechanistic framework widely adopted today.",
-        },
-      ],
-      potentialExamQuestions: [
-        {
-          question: `Explain how the primary mechanism of ${detectedTitle} handles anomalous boundary conditions.`,
-          type: "essay",
-          keyPoint: "Focus on feedback loops and structural thresholds.",
-        },
-        {
-          question: "Which factor acts as the primary rate-limiting constraint?",
-          type: "multiple_choice",
-          keyPoint: "Substrate availability and energetic activation energy.",
-        },
-      ],
-      chunks: [
-        {
-          chunkId: "chunk-1",
-          title: "Part 1: Foundational Framework",
-          sourceReference: "Section 1, Lines 1-35",
-          summary: "Introduction to terminology and governing equations.",
-          content: content.slice(0, 1000) || "Introduction and fundamental definitions.",
-          keyTerms: ["Foundations", "Nomenclature", "Baseline"],
-        },
-        {
-          chunkId: "chunk-2",
-          title: "Part 2: Dynamic Execution & Analysis",
-          sourceReference: "Section 2, Lines 36-90",
-          summary: "Mechanisms, practical applications, and common pitfalls.",
-          content: content.slice(1000, 2000) || "Analytical breakdowns and functional case studies.",
-          keyTerms: ["Mechanism", "Validation", "Optimization"],
-        },
-      ],
+      formulas: scanned.formulas,
+      importantDates: [],
+      potentialExamQuestions: scanned.potentialExamQuestions,
+      chunks: scanned.chunks,
     },
   });
 });
 
 // Fast unified endpoint: processes material, generates notes and flashcards in one pass
 app.post("/api/gemini/process-material", async (req, res) => {
-  const { title, content, sourceType, subject } = req.body;
-  const ai = getGeminiClient();
+  const { title, sourceType, subject } = req.body;
+  const rawContent = (req.body.content || req.body.text || req.body.rawText || "").trim();
   const detectedTitle = (title || "").trim() || "Study Material";
-  const rawContent = (content || "").trim();
+  const scanned = scanDocumentStructure(rawContent, detectedTitle);
+  const ai = getGeminiClient();
 
   if (ai && rawContent) {
     try {
-      const prompt = `You are StudyMate AI. Process this study material into a comprehensive educational package.
+      const prompt = `You are StudyMate AI.
+Scan the uploaded study document paragraph by paragraph, extract every concrete subtopic, and note down all important points directly from each paragraph.
+
+STRICT EXTRACTION DIRECTIVES:
+1. CURRICULUM SCANNING: Go through the uploaded text in sequential order.
+2. EXTRACT SUBTOPICS & IMPORTANT POINTS:
+   - Identify each distinct subtopic from the headings and sections.
+   - For every subtopic, extract its section reference, 2-5 high-yield important points (definitions, mechanisms, quantitative parameters, formulas, rules), and a key takeaway.
+3. POPULATE 'subtopicsWithNotes' in 'notes':
+   Array of objects containing { "subtopic": string, "paragraphReference": string, "importantPoints": string[], "keyTakeaway": string }.
+4. FLASHCARDS GROUNDING:
+   - Generate exactly 15 flashcards where "category" is set to the specific subtopic extracted from the document.
+   - Fronts and backs must test the important points directly from the file. Zero meta-questions.
+5. CRITICAL DIRECTIVE: NEVER write phrases like "noted in any paragraph", "noted in paragraph", "as noted in the text", "in paragraph X", or make meta references to paragraphs or lines. Phrase all questions, answers, and explanations as direct, rigorous academic concepts and principles.
+
 Topic: ${detectedTitle}
 Subject: ${subject || "General"}
 Source: ${sourceType || "Upload"}
 Content:
 """
-${rawContent.slice(0, 10000)}
+${rawContent.slice(0, 16000)}
 """
 
 Return ONLY a single valid JSON object:
@@ -803,6 +1009,14 @@ Return ONLY a single valid JSON object:
   "notes": {
     "topicTitle": string,
     "shortOverview": string,
+    "subtopicsWithNotes": [
+      {
+        "subtopic": string,
+        "paragraphReference": string,
+        "importantPoints": string[],
+        "keyTakeaway": string
+      }
+    ],
     "keyConcepts": [ { "title": string, "description": string, "keyTakeaway": string } ],
     "definitions": [ { "term": string, "definition": string, "context": string } ],
     "importantDetails": string[],
@@ -832,236 +1046,148 @@ Return ONLY a single valid JSON object:
       const response: any = await Promise.race([aiPromise, timeoutPromise]);
       const parsed = cleanJsonResponse(response.text || "{}");
 
+      const enrichedNotes = parsed.notes ? {
+        ...parsed.notes,
+        subtopicsWithNotes: (parsed.notes.subtopicsWithNotes && parsed.notes.subtopicsWithNotes.length > 0)
+          ? parsed.notes.subtopicsWithNotes
+          : scanned.subtopicsWithNotes,
+        importantDetails: (parsed.notes.importantDetails && parsed.notes.importantDetails.length > 0)
+          ? parsed.notes.importantDetails
+          : scanned.importantPoints,
+      } : null;
+
       return res.json({
         success: true,
         material: {
           title: detectedTitle,
-          summary: parsed.summary || `Structured guide for ${detectedTitle}.`,
-          mainTopics: parsed.mainTopics || ["Foundations", "Mechanisms", "Applications"],
-          subtopics: parsed.subtopics || ["Core principles", "Key definitions"],
-          keyConcepts: parsed.keyConcepts || [],
-          definitions: parsed.definitions || [],
-          formulas: parsed.formulas || [],
-          potentialExamQuestions: parsed.potentialExamQuestions || [],
+          summary: parsed.summary || scanned.summary,
+          mainTopics: parsed.mainTopics || [`${detectedTitle} Principles`, "Core Mechanisms", "Practical Applications"],
+          subtopics: parsed.subtopics || scanned.subtopics,
+          keyConcepts: parsed.keyConcepts || scanned.keyConcepts,
+          definitions: parsed.definitions || scanned.definitions,
+          formulas: parsed.formulas || scanned.formulas,
+          potentialExamQuestions: parsed.potentialExamQuestions || scanned.potentialExamQuestions,
         },
-        notes: parsed.notes || null,
+        notes: enrichedNotes,
         flashcards: parsed.flashcards || [],
       });
     } catch (err: any) {
-      console.warn("Gemini process-material failed, using high-yield fallback:", err?.message);
+      console.warn("Gemini process-material failed, using scanned paragraph fallback:", err?.message);
     }
   }
 
-  // High-yield instant fallback so the user is never stuck loading
-  const firstTerms = detectedTitle.split(" ");
-  const term1 = firstTerms[0] || "Foundational Principle";
-  const term2 = firstTerms[1] || "System Dynamics";
-
+  // High-yield paragraph-scanned fallback
   return res.json({
     success: true,
     material: {
       title: detectedTitle,
-      summary: `Comprehensive study breakdown of ${detectedTitle}, synthesizing core principles, theoretical foundations, key terminology, and high-yield examination focus points.`,
+      summary: scanned.summary,
       mainTopics: [
-        "Core Foundations & Principles",
+        `${detectedTitle} Core Foundations`,
         "Mechanisms & Operational Processes",
-        "Applied Systems & Real-World Examples",
-        "Critical Analysis & Common Pitfalls",
+        "Key Subtopics & Important Points",
+        "Diagnostic Examination Focus",
       ],
-      subtopics: [
-        "Primary definitions and boundary conditions",
-        "Step-by-step procedural workflows",
-        "Comparative relationships and distinctions",
-        "Quantitative formulas and qualitative metrics",
-      ],
-      keyConcepts: [
-        {
-          concept: "Fundamental Model",
-          explanation: "The primary underlying model explaining how components interact systematically.",
-          importance: "high",
-        },
-        {
-          concept: "Dynamic Equilibrium",
-          explanation: "The balance between active input forces and regulatory feedback mechanisms.",
-          importance: "high",
-        },
-        {
-          concept: "Boundary Thresholds",
-          explanation: "Environmental constraints that govern system stability and efficiency.",
-          importance: "medium",
-        },
-      ],
-      definitions: [
-        {
-          term: term1,
-          definition: "The operative mechanism responsible for transforming inputs into observable state changes.",
-        },
-        {
-          term: term2,
-          definition: "The structural framework dictating how energy, force, or data flows through the system.",
-        },
-        {
-          term: "Limiting Factor",
-          definition: "The primary constraint that bounds the maximum rate or yield of the entire process.",
-        },
-      ],
-      formulas: [
-        {
-          name: "System Efficiency Index",
-          formula: "η = (Useful Output / Total Input) × 100%",
-          explanation: "Measures procedural throughput while identifying loss factors.",
-        },
-      ],
-      potentialExamQuestions: [
-        {
-          question: `Explain how the primary mechanism of ${detectedTitle} adapts when boundary thresholds are approached.`,
-          type: "essay",
-          keyPoint: "Focus on feedback loops, structural limits, and compensatory actions.",
-        },
-        {
-          question: "Which component represents the primary rate-limiting constraint?",
-          type: "multiple_choice",
-          keyPoint: "Activation energy and resource availability.",
-        },
-      ],
+      subtopics: scanned.subtopics,
+      keyConcepts: scanned.keyConcepts,
+      definitions: scanned.definitions,
+      formulas: scanned.formulas,
+      potentialExamQuestions: scanned.potentialExamQuestions,
     },
     notes: {
       topicTitle: detectedTitle,
       subject: subject || "General",
-      shortOverview: `These structured notes synthesize the fundamental principles, essential definitions, worked examples, and critical exam pitfalls for ${detectedTitle}. Designed for rapid revision and deep conceptual understanding.`,
-      keyConcepts: [
-        {
-          title: "Core Underlying Principle",
-          description: "The primary rule that governs all subsequent behavior in this subject. Everything builds upon this initial postulate.",
-          keyTakeaway: "Master this principle before attempting edge cases.",
-        },
-        {
-          title: "Mechanism & Interaction",
-          description: "How individual components communicate, transfer energy or information, and reach equilibrium.",
-          keyTakeaway: "Pay special attention to rate-limiting and regulatory steps.",
-        },
-        {
-          title: "Application to Novel Scenarios",
-          description: "Translating theoretical calculations into observable outcomes and empirical evidence.",
-          keyTakeaway: "Examiners test your ability to apply theory to novel situations.",
-        },
-      ],
-      definitions: [
-        {
-          term: term1,
-          definition: "The main orientation or foundational premise around which the theory is structured.",
-          context: "Used when establishing coordinate frames or conceptual models.",
-        },
-        {
-          term: "Dynamic Steady State",
-          definition: "A condition where inputs and outputs occur at equal rates, maintaining constant overall conditions.",
-          context: "Vital in biological, chemical, and physical systems.",
-        },
-        {
-          term: "Limiting Factor",
-          definition: "The single component that is completely consumed first, capping the maximum yield of the system.",
-          context: "Frequent source of calculation questions in exams.",
-        },
-      ],
-      importantDetails: [
-        "Always define your frame of reference or assumptions before solving multi-step problems.",
-        "Verify dimensional consistency across all terms in your equations.",
-        "Observe how changes in environmental variables shift equilibrium states.",
-        "Active recall self-testing yields 3x higher retention than passive rereading.",
-      ],
+      shortOverview: scanned.summary,
+      subtopicsWithNotes: scanned.subtopicsWithNotes,
+      keyConcepts: scanned.keyConcepts.map((k) => ({
+        title: k.concept,
+        description: k.explanation,
+        keyTakeaway: `Key takeaway: understand how ${k.concept} operates within ${detectedTitle}.`,
+      })),
+      definitions: scanned.definitions.map((d) => ({
+        term: d.term,
+        definition: d.definition,
+        context: `Direct definition extracted from ${detectedTitle}.`,
+      })),
+      importantDetails: scanned.importantPoints,
       examples: [
         {
-          scenario: "Standard Controlled Baseline Test",
-          explanation: "Under baseline conditions, the process proceeds at the theoretical standard rate.",
-        },
-        {
-          scenario: "Stress Perturbation Test",
-          explanation: "When an external disturbance is introduced, the system counteracts the change in accordance with equilibrium laws.",
+          scenario: `${scanned.subtopics[0] || detectedTitle} Practical Application`,
+          explanation: `Applying the extracted principles of ${scanned.subtopics[0] || detectedTitle} to solve exam scenarios.`,
         },
       ],
-      formulas: [
-        {
-          name: "Standard Rate Equation",
-          formula: "R = k[A]^m [B]^n",
-          explanation: "Describes how concentration directly affects procedural throughput over time.",
-        },
-      ],
+      formulas: scanned.formulas,
       commonMistakes: [
         {
-          mistake: "Confusing equilibrium with equal concentrations.",
-          correction: "Equilibrium means equal rates of forward and reverse actions, not equal amounts.",
-          whyItHappens: "Students conflate static equality with dynamic balance.",
-        },
-        {
-          mistake: "Neglecting unit conversions before substituting into formulas.",
-          correction: "Standardize units (e.g., SI units) at the very start.",
-          whyItHappens: "Rushing to compute answers without double checking prefixes.",
+          mistake: `Conflating definitions across ${scanned.subtopics[0] || "different"} and ${scanned.subtopics[1] || "related"} subtopics.`,
+          correction: "Strictly verify the specific conditions, thresholds, and boundary constraints outlined in the notes.",
+          whyItHappens: "Students often generalize rules without noting specific conditional caveats.",
         },
       ],
-      quickRecap: [
-        "Ground yourself in the 3 foundational pillars of the topic.",
-        "Identify the primary governing formula and its boundary constraints.",
-        "Distinguish between static conditions and dynamic steady states.",
-        "Avoid common algebraic and unit-conversion traps during exam time.",
-      ],
+      quickRecap: scanned.importantPoints.slice(0, 5),
     },
-    flashcards: [
-      {
-        id: `fc-1-${Date.now()}`,
-        front: `What is the core definition and role of ${term1}?`,
-        back: "It acts as the primary operative mechanism converting baseline states into functional outputs.",
-        hint: "Think about the primary driver of the system.",
-        difficulty: "easy",
-        category: "Definitions",
-      },
-      {
-        id: `fc-2-${Date.now()}`,
-        front: "What is the key difference between static equality and dynamic equilibrium?",
-        back: "Equilibrium means forward and reverse rates are equal, while concentrations remain constant without necessarily being equal.",
-        hint: "Focus on rates vs. amounts.",
-        difficulty: "medium",
-        category: "Core Concepts",
-      },
-      {
-        id: `fc-3-${Date.now()}`,
-        front: "How does a rate-limiting factor dictate the overall system output?",
-        back: "Because the whole process cannot proceed faster than its slowest step, the limiting factor sets the maximum throughput ceiling.",
-        hint: "Analogy of the narrowest bottleneck in a pipeline.",
-        difficulty: "medium",
-        category: "Mechanisms",
-      },
-      {
-        id: `fc-4-${Date.now()}`,
-        front: "What is the common pitfall students make when calculating efficiency or rate metrics?",
-        back: "Failing to standardize prefixes and SI units before algebraic substitution.",
-        hint: "Check units before calculating.",
-        difficulty: "hard",
-        category: "Exam Pitfalls",
-      },
-    ],
+    flashcards: scanned.subtopicsWithNotes.flatMap((swn, sIdx) =>
+      swn.importantPoints.slice(0, 3).map((pt, pIdx) => ({
+        id: `fc-${sIdx + 1}-${pIdx + 1}-${Date.now()}`,
+        front: `What is the key governing principle of "${swn.subtopic}"?`,
+        back: pt.replace(/^\*\*[^*]+\*\*:\s*/, ""),
+        hint: `Refers to ${swn.subtopic}`,
+        difficulty: pIdx === 0 ? "easy" as const : "medium" as const,
+        category: swn.subtopic,
+      }))
+    ).slice(0, 15),
   });
 });
 
-// 2. Generate structured notes endpoint
+// 2. Generate structured notes endpoint: Scans paragraphs, subtopics, and important points
 app.post("/api/gemini/generate-notes", async (req, res) => {
-  const { title, content } = req.body;
+  const { title } = req.body;
+  const content = req.body.content || req.body.text || req.body.rawText;
+  const detectedTitle = title || "Comprehensive Study Notes";
+  const scanned = scanDocumentStructure(content || "", detectedTitle);
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
-      const prompt = `You are StudyMate AI. Generate clean, highly structured, beautifully organized study notes for the following subject material.
-Do not write walls of text. Use bullet points, bold keywords, clear distinctions, and academic clarity.
+      const prompt = `You are StudyMate AI.
+Scan the uploaded subject material paragraph by paragraph, extract every meaningful subtopic, and note down all important points directly from each paragraph.
 
-Topic: ${title}
+CRITICAL DIRECTIVES:
+1. SCAN EACH PARAGRAPH: Go through the uploaded content in sequential order.
+2. EXTRACT SUBTOPICS & IMPORTANT POINTS:
+   - Identify 3 to 10 distinct subtopics from headings and paragraphs.
+   - For each subtopic, provide its paragraph reference (e.g., "Paragraph 1", "Paragraphs 2-4"), a list of 2 to 5 concrete important points extracted directly from that paragraph, and a key takeaway.
+3. POPULATE 'subtopicsWithNotes':
+   [
+     {
+       "subtopic": string,
+       "paragraphReference": string,
+       "importantPoints": string[],
+       "keyTakeaway": string
+     }
+   ]
+4. POPULATE 'importantDetails':
+   A comprehensive list of 8 to 20 concrete high-yield important points extracted across the document paragraphs (formulas, rules, causal mechanisms, parameters, numbers).
+5. ACADEMIC CLARITY: No walls of text. Use bullet points, bold keywords, and clear academic distinctions.
+
+Topic: ${detectedTitle}
 Content:
 """
-${content.slice(0, 12000)}
+${content.slice(0, 18000)}
 """
 
 Return ONLY a JSON object:
 {
   "topicTitle": string,
   "shortOverview": string,
+  "subtopicsWithNotes": [
+    {
+      "subtopic": string,
+      "paragraphReference": string,
+      "importantPoints": string[],
+      "keyTakeaway": string
+    }
+  ],
   "keyConcepts": [
     { "title": string, "description": string, "keyTakeaway": string }
   ],
@@ -1090,138 +1216,96 @@ Return ONLY a JSON object:
       });
 
       const parsed = cleanJsonResponse(response.text || "{}");
-      return res.json({ success: true, data: parsed });
+      return res.json({
+        success: true,
+        data: {
+          ...parsed,
+          subtopicsWithNotes: (parsed.subtopicsWithNotes && parsed.subtopicsWithNotes.length > 0)
+            ? parsed.subtopicsWithNotes
+            : scanned.subtopicsWithNotes,
+          importantDetails: (parsed.importantDetails && parsed.importantDetails.length > 0)
+            ? parsed.importantDetails
+            : scanned.importantPoints,
+        },
+      });
     } catch (err: any) {
-      console.info("[Notes Generator] Upstream AI busy, generating high-yield structured study notes fallback.");
+      console.info("[Notes Generator] Upstream AI busy, using high-yield scanned paragraph fallback.");
     }
   }
 
   return res.json({
     success: true,
     data: {
-      topicTitle: title || "Comprehensive Study Notes",
-      shortOverview: `These structured notes synthesize the fundamental principles, essential definitions, worked examples, and critical exam pitfalls for ${title || "this subject"}. Designed for rapid revision and deep conceptual understanding.`,
-      keyConcepts: [
-        {
-          title: "Core Underlying Principle",
-          description: "The primary rule that governs all subsequent behavior in this subject. Everything builds upon this initial postulate.",
-          keyTakeaway: "Master this principle before attempting edge cases.",
-        },
-        {
-          title: "Mechanism & Interaction",
-          description: "How individual components communicate, transfer energy or information, and reach equilibrium.",
-          keyTakeaway: "Pay special attention to rate-limiting and regulatory steps.",
-        },
-        {
-          title: "Application to Real Scenarios",
-          description: "Translating theoretical calculations into observable outcomes and experimental evidence.",
-          keyTakeaway: "Examiners test your ability to apply theory to novel situations.",
-        },
-      ],
-      definitions: [
-        {
-          term: "Primary Axis",
-          definition: "The main orientation or foundational premise around which the theory is structured.",
-          context: "Used when establishing coordinate frames or conceptual models.",
-        },
-        {
-          term: "Dynamic Steady State",
-          definition: "A condition where inputs and outputs occur at equal rates, maintaining constant overall conditions.",
-          context: "Vital in biological, chemical, and physical systems.",
-        },
-        {
-          term: "Limiting Reagent / Factor",
-          definition: "The single component that is completely consumed first, capping the maximum yield of the system.",
-          context: "Frequent source of calculation questions in exams.",
-        },
-      ],
-      importantDetails: [
-        "Always define your frame of reference or assumptions before solving multi-step problems.",
-        "Verify dimensional consistency across all terms in your equations.",
-        "Observe how changes in temperature, pressure, or concentration shift equilibrium states.",
-        "Active recall self-testing yields 3x higher retention than passive rereading.",
-      ],
+      topicTitle: detectedTitle,
+      shortOverview: scanned.summary,
+      subtopicsWithNotes: scanned.subtopicsWithNotes,
+      keyConcepts: scanned.keyConcepts.map((k) => ({
+        title: k.concept,
+        description: k.explanation,
+        keyTakeaway: `Key takeaway: understand how ${k.concept} operates within ${detectedTitle}.`,
+      })),
+      definitions: scanned.definitions.map((d) => ({
+        term: d.term,
+        definition: d.definition,
+        context: `Essential definition extracted from ${detectedTitle}.`,
+      })),
+      importantDetails: scanned.importantPoints,
       examples: [
         {
-          scenario: "Standard Controlled Laboratory Condition",
-          explanation: "Under baseline 25°C and 1 atm pressure, the reaction or process proceeds at the theoretical standard rate.",
-        },
-        {
-          scenario: "Stress Perturbation Test",
-          explanation: "When an external disturbance is introduced, the system counteracts the change in accordance with equilibrium laws.",
+          scenario: `${scanned.subtopics[0] || detectedTitle} Practical Application`,
+          explanation: `Applying the extracted principles of ${scanned.subtopics[0] || detectedTitle} to solve exam scenarios.`,
         },
       ],
-      formulas: [
-        {
-          name: "Standard Rate Equation",
-          formula: "R = k[A]^m [B]^n",
-          explanation: "Describes how concentration directly affects procedural throughput over time.",
-        },
-        {
-          name: "Conservation Identity",
-          formula: "∑ Inputs = ∑ Outputs + Δ Storage",
-          explanation: "Universal balance equation preventing spontaneous generation or loss.",
-        },
-      ],
+      formulas: scanned.formulas,
       commonMistakes: [
         {
-          mistake: "Confusing equilibrium with equal concentrations.",
-          correction: "Equilibrium means equal rates of forward and reverse actions, not equal amounts.",
-          whyItHappens: "Students conflate static equality with dynamic balance.",
-        },
-        {
-          mistake: "Neglecting unit conversions before substituting into formulas.",
-          correction: "Standardize units (e.g., SI units like meters, kilograms, seconds, Joules) at the very start.",
-          whyItHappens: "Rushing to compute answers without double checking prefixes (milli, micro, kilo).",
+          mistake: `Conflating definitions across ${scanned.subtopics[0] || "different"} and ${scanned.subtopics[1] || "related"} subtopics.`,
+          correction: "Strictly verify the specific conditions, thresholds, and boundary constraints outlined in the notes.",
+          whyItHappens: "Students often generalize rules without noting specific conditional caveats.",
         },
       ],
-      quickRecap: [
-        "Ground yourself in the 3 foundational pillars of the topic.",
-        "Identify the primary governing formula and its boundary constraints.",
-        "Distinguish between static conditions and dynamic steady states.",
-        "Avoid common algebraic and unit-conversion traps during exam time.",
-      ],
+      quickRecap: scanned.importantPoints.slice(0, 5),
     },
   });
 });
 
 // 3. Generate memorisation & flashcards endpoint
 app.post("/api/gemini/generate-flashcards", async (req, res) => {
-  const { title, content } = req.body;
+  const { title } = req.body;
+  const content = req.body.content || req.body.text || req.body.rawText;
+  const detectedTitle = title || "Study Material";
+  const scanned = scanDocumentStructure(content || "", detectedTitle);
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
       const prompt = `You are StudyMate AI, an expert in cognitive science and spaced repetition memory techniques.
-Create a dedicated Memorise pack pulled directly from the uploaded study material below.
+Your mission is to scan the uploaded study material, identify every concrete subtopic, and extract a dedicated Memorise pack where EVERY flashcard directly tests an important point or mechanism from that section.
 
 STRICT CONTENT REQUIREMENTS:
-1. "flashcards": Exactly 15 flashcards. Each MUST include:
-   - "id": unique string (e.g. "fc-1", "fc-2")
-   - "front": clear, direct subject matter question or prompt testing a specific academic fact, mechanism, term, or relationship from the material
-   - "back": concise, accurate direct answer
-   - "explanation": a detailed explanation of the question asked, explaining the underlying mechanism and why this is the correct answer
-   - "hint": a helpful clue
-   - "difficulty": "easy" | "medium" | "hard"
-   - "category": topic category name
-2. "mnemonics": Exactly 10 (or more) AI mnemonics (creative acronyms, mental hooks, or associative memory pegs).
-3. "fillInTheBlanks": Exactly 15 objective questions with options. Each MUST include:
-   - "sentence": statement with "_______" representing the blank
-   - "answer": the exact missing word/phrase
-   - "options": an array of 4 objective multiple-choice choices (including the correct answer)
-   - "hint": clue
-   - "explanation": detailed explanation of why the answer fits
+1. "flashcards": Exactly 15 flashcards.
+   - Scan across the subtopics of the uploaded text so the flashcards cover the entire document from beginning to end.
+   - Each MUST include:
+     - "id": unique string (e.g. "fc-1", "fc-2")
+     - "category": the exact subtopic or section name from the uploaded text that this card covers
+     - "front": clear, direct question or active recall prompt testing a specific important point, mechanism, rule, parameter, or concept
+     - "back": concise, accurate direct answer extracted directly from the text
+     - "explanation": a detailed explanation explaining the underlying mechanism and academic context
+     - "hint": a helpful memory clue
+     - "difficulty": "easy" | "medium" | "hard"
+2. "mnemonics": Exactly 10 (or more) AI mnemonics (creative acronyms, mental hooks, or associative memory pegs) for key concepts in the text.
+3. "fillInTheBlanks": Exactly 15 objective questions with options testing key sentences and important points from the file.
 4. "recallQuestions": 2-3 deep recall questions with ideal answers.
 
 CRITICAL NEGATIVE CONSTRAINTS:
 - NEVER ask meta questions about the file or upload format itself!
-- NEVER include phrases like "What is the uploaded study file?", "According to the uploaded document", "In this file", etc.
+- NEVER include phrases like "What is the uploaded study file?", "According to the uploaded document", "In this file", "noted in any paragraph", "noted in paragraph", "as noted in the text", "in paragraph X", or make meta references to paragraphs or lines.
 - Questions must ONLY test genuine academic and scientific concepts directly from the subject text.
 
-Topic: ${title}
+Topic: ${detectedTitle}
 Material:
 """
-${content.slice(0, 12000)}
+${content.slice(0, 18000)}
 """
 
 Return ONLY a JSON object matching this schema:
@@ -1280,148 +1364,36 @@ Return ONLY a JSON object matching this schema:
       }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
-      console.info("[Flashcard Generator] Upstream AI busy, generating high-yield flashcards fallback.");
+      console.info("[Flashcard Generator] Upstream AI busy, generating academic flashcards fallback.");
     }
   }
 
-  // 15 flashcards fallback with rich explanations
-  const fallbackFlashcards = [
-    {
-      id: "fc-1",
-      front: `What is the core operational definition of ${title || "this topic"}?`,
-      back: "The foundational framework describing how system components interact, transform inputs, and maintain balance.",
-      explanation: `Detailed Explanation:\nThis question tests your baseline conceptual grasp of ${title || "the subject"}. In academic study, understanding the foundational definition acts as the primary mental scaffold before moving into mathematical formulations or complex procedural workflows.`,
-      hint: "Focus on systemic interaction and conservation.",
-      difficulty: "easy",
-      category: "Definitions",
-    },
-    {
-      id: "fc-2",
-      front: "What is the key difference between static equilibrium and dynamic steady state?",
-      back: "In static equilibrium, all microscopic and macroscopic processes halt. In dynamic steady state, forward and reverse processes continue at identical rates.",
-      explanation: "Detailed Explanation:\nStatic equilibrium involves no ongoing energy or mass throughput (dead halt). Dynamic steady state requires active, ongoing flux of reactants/signals that continuously balance each other out.",
-      hint: "Think about whether motion or reactions are active.",
+  // 15 concept-grounded flashcards fallback
+  const fallbackFlashcards = scanned.subtopicsWithNotes.flatMap((swn, sIdx) =>
+    swn.importantPoints.slice(0, 3).map((pt, pIdx) => ({
+      id: `fc-${sIdx + 1}-${pIdx + 1}`,
+      front: `What is the core principle governing "${swn.subtopic}"?`,
+      back: pt.replace(/^\*\*[^*]+\*\*:\s*/, ""),
+      explanation: `Detailed Explanation:\nThis question tests your understanding of "${swn.subtopic}". The core material specifies: ${pt}. Mastering this concept ensures complete exam readiness.`,
+      hint: `Refers to ${swn.subtopic}`,
+      difficulty: (pIdx === 0 ? "easy" : pIdx === 1 ? "medium" : "hard") as "easy" | "medium" | "hard",
+      category: swn.subtopic,
+    }))
+  ).slice(0, 15);
+
+  while (fallbackFlashcards.length < 15) {
+    const idx = fallbackFlashcards.length + 1;
+    const def = scanned.definitions[idx % Math.max(1, scanned.definitions.length)];
+    fallbackFlashcards.push({
+      id: `fc-fill-${idx}`,
+      front: `What is the definition and function of "${def?.term || detectedTitle}"?`,
+      back: def?.definition || `A core foundational concept in ${detectedTitle}.`,
+      explanation: `Direct academic definition extracted from ${detectedTitle}.`,
+      hint: `Key term in ${detectedTitle}`,
       difficulty: "medium",
-      category: "Core Concepts",
-    },
-    {
-      id: "fc-3",
-      front: "What constitutes the primary rate-limiting factor in this system?",
-      back: "The specific sub-process with the highest activation energy or the component with the lowest availability threshold.",
-      explanation: "Detailed Explanation:\nMuch like the narrowest neck in an hourglass, the overall velocity or yield of the entire system is strictly throttled by its slowest, highest-resistance step.",
-      hint: "Think of the narrowest point in a bottleneck.",
-      difficulty: "hard",
-      category: "Mechanisms",
-    },
-    {
-      id: "fc-4",
-      front: "How does an increase in system temperature typically influence kinetic throughput?",
-      back: "It elevates average molecular kinetic energy, increasing the fraction of particles that surpass the activation barrier.",
-      explanation: "Detailed Explanation:\nAccording to the Arrhenius relationship and Maxwell-Boltzmann distribution, thermal energy increases collision frequency and collision efficacy, accelerating reaction speed.",
-      hint: "Recall Maxwell-Boltzmann distribution curves.",
-      difficulty: "medium",
-      category: "Thermodynamics",
-    },
-    {
-      id: "fc-5",
-      front: "What mathematical identity describes the conservation of inputs and outputs?",
-      back: "∑ Inputs = ∑ Outputs + Accumulation. Under steady state, Accumulation = 0.",
-      explanation: "Detailed Explanation:\nThe first law of conservation dictates that matter and energy cannot be created or destroyed. In an open steady-state system, rate in must precisely equal rate out.",
-      hint: "Nothing is created or destroyed without accounting for storage.",
-      difficulty: "easy",
-      category: "Formulas",
-    },
-    {
-      id: "fc-6",
-      front: "What role does negative feedback regulation play?",
-      back: "It counteracts deviations from the target set point, preventing runaway escalation and restoring homeostatic equilibrium.",
-      explanation: "Detailed Explanation:\nNegative feedback loops sense output levels and throttle upstream inputs when the target threshold is exceeded, maintaining operational stability.",
-      hint: "Think of a household thermostat.",
-      difficulty: "easy",
-      category: "Regulatory Control",
-    },
-    {
-      id: "fc-7",
-      front: "How does a catalyst affect activation energy without shifting equilibrium?",
-      back: "It provides an alternative reaction pathway with a lower activation energy, accelerating both forward and reverse rates equally.",
-      explanation: "Detailed Explanation:\nCatalysts do not alter thermodynamic free energy (ΔG) or the final equilibrium constant (K); they simply lower the energetic hurdle to reach equilibrium faster.",
-      hint: "Lowers the mountain pass without changing start or finish elevation.",
-      difficulty: "medium",
-      category: "Kinetics",
-    },
-    {
-      id: "fc-8",
-      front: "What is thermodynamic entropy and what does the second law dictate?",
-      back: "Entropy measures the dispersion of energy and molecular disorder; total entropy in an isolated system must always increase.",
-      explanation: "Detailed Explanation:\nThe second law of thermodynamics establishes the irreversible arrow of time, dictating that natural spontaneous processes move toward maximum energetic dispersion.",
-      hint: "Second law direction of disorder.",
-      difficulty: "hard",
-      category: "Thermodynamics",
-    },
-    {
-      id: "fc-9",
-      front: "Why is empirical validation required in scientific modeling?",
-      back: "To confirm that theoretical hypotheses match reproducible physical observations under controlled experimental conditions.",
-      explanation: "Detailed Explanation:\nA theory may be mathematically elegant, but without empirical testing against physical data, it cannot be validated as natural law.",
-      hint: "Think about reproducible laboratory trials.",
-      difficulty: "easy",
-      category: "Scientific Methodology",
-    },
-    {
-      id: "fc-10",
-      front: "What is a perturbation response in systems theory?",
-      back: "The compensatory adjustment a system undergoes when an external force displaces it from equilibrium.",
-      explanation: "Detailed Explanation:\nPer Le Chatelier's principle and general systems theory, when an external stress is applied, the system shifts its state to oppose the stress.",
-      hint: "Opposing external displacement.",
-      difficulty: "medium",
-      category: "System Dynamics",
-    },
-    {
-      id: "fc-11",
-      front: "What is the danger of confusing correlation with causation?",
-      back: "Assuming one variable causes another when an unobserved confounding factor may actually drive both.",
-      explanation: "Detailed Explanation:\nTwo variables may rise together due to coincidental timing or a third hidden factor. Establishing causation requires rigorous experimental control.",
-      hint: "Confounding third variables.",
-      difficulty: "medium",
-      category: "Analytical Reasoning",
-    },
-    {
-      id: "fc-12",
-      front: "What is an activation threshold in physical or biological processes?",
-      back: "The minimum energetic or signaling stimulus required before an observable transformation can begin.",
-      explanation: "Detailed Explanation:\nSub-threshold inputs result in passive decay with zero state transition. Once the threshold is breached, the process proceeds spontaneously or all-or-none.",
-      hint: "The minimum hurdle to initiate action.",
-      difficulty: "easy",
-      category: "Mechanisms",
-    },
-    {
-      id: "fc-13",
-      front: "How do boundary conditions constrain mathematical models?",
-      back: "They define the spatial, temperature, or pressure domain within which governing equations remain valid.",
-      explanation: "Detailed Explanation:\nFormulas like ideal gas laws or linear kinetics fail when boundary conditions (such as extreme pressure or low temperature) are breached.",
-      hint: "The physical limits of formula applicability.",
-      difficulty: "hard",
-      category: "Modeling",
-    },
-    {
-      id: "fc-14",
-      front: "What is meant by systemic homogeneity?",
-      back: "A uniform spatial distribution of chemical species, temperature, or properties throughout a phase.",
-      explanation: "Detailed Explanation:\nHomogeneous systems have identical properties at every microscopic coordinate, eliminating localized diffusion gradients.",
-      hint: "Uniformity across the entire mixture.",
-      difficulty: "medium",
-      category: "Foundations",
-    },
-    {
-      id: "fc-15",
-      front: "Why does active recall outperform passive rereading during exam preparation?",
-      back: "Retrieval practice strengthens neural synaptic connections and diagnoses gaps in mental models far more effectively.",
-      explanation: "Detailed Explanation:\nCognitive testing shows that the effort of retrieving knowledge from memory reorganizes and cements long-term storage, whereas rereading creates a false illusion of competence.",
-      hint: "The testing effect in cognitive science.",
-      difficulty: "easy",
-      category: "Learning Strategy",
-    },
-  ];
+      category: scanned.subtopics[0] || "Foundations",
+    });
+  }
 
   // 10 AI Mnemonics fallback
   const fallbackMnemonics = [
@@ -1605,41 +1577,48 @@ Return ONLY a JSON object matching this schema:
 
 // 4. Generate AI Diagnostic Quiz endpoint
 app.post("/api/gemini/generate-quiz", async (req, res) => {
-  const { title, content, questionCount = 20, variant = 1 } = req.body;
+  const { title, questionCount = 20, variant = 1 } = req.body;
+  const content = req.body.content || req.body.text || req.body.rawText;
   const count = Math.min(20, Math.max(10, parseInt(questionCount) || 20));
+  const detectedTitle = title || "Diagnostic Assessment";
+  const scanned = scanDocumentStructure(content || "", detectedTitle);
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
       const prompt = `You are StudyMate AI Senior Diagnostic Assessment Specialist.
-You must construct a comprehensive, rigorous DIAGNOSTIC ASSESSMENT consisting of exactly ${count} questions directly and specifically extracted from the provided study document.
+Scan the uploaded study document paragraph by paragraph, identify every concrete subtopic, and extract a comprehensive, rigorous DIAGNOSTIC ASSESSMENT consisting of exactly ${count} questions directly and specifically from the provided study document paragraphs.
 
 CRITICAL PEDAGOGICAL DIRECTIVES (STRICTLY ENFORCE):
-1. ABSOLUTELY DO NOT REPEAT FLASHCARD OR GLOSSARY DEFINITIONS:
+1. PARAGRAPH-BY-PARAGRAPH SCANNING:
+   - Walk through the uploaded document paragraph by paragraph.
+   - Ground each question in specific facts, relationships, calculations, and mechanisms stated in those paragraphs.
+   - Set "topicTag" to the exact subtopic heading or section from the document that the question tests.
+2. ABSOLUTELY DO NOT REPEAT FLASHCARD OR GLOSSARY DEFINITIONS:
    - Do NOT ask simple vocabulary questions like "What is the definition of X?" or "Which term defines Y?". Flashcards and glossary sections already cover definitions.
-2. EXTRACT DEEP, VARIED QUESTIONS DIRECTLY FROM DIFFERENT SECTIONS OF THE UPLOADED TEXT:
+3. EXTRACT DEEP, VARIED QUESTIONS DIRECTLY FROM DIFFERENT SECTIONS OF THE UPLOADED TEXT:
    - Diagnostic Scenario / Empirical Observation: An investigator alters conditions in a system described in the document. What diagnostic indicator confirms the mechanism?
    - Cause-and-Effect Mechanism: According to the document, what happens when condition A is altered relative to threshold B?
    - Mathematical / Quantitative / Formula Application: A calculation or parameter relationship extracted directly from the notes (e.g. rate laws, equilibrium constants, thermodynamics, ratios).
    - Boundary Conditions & Exceptions: What condition causes the standard rule in this lecture to fail or deviate?
    - Misconceptions & Traps: Diagnostic question targeting the exact misconception students make on this topic.
    - Perturbations, Catalytic Limits, Homeostatic Loops, Bottlenecks, Depletion Effects, and High-Yield Syntheses.
-3. ZERO META-QUESTIONS:
+4. ZERO META-QUESTIONS:
    - NEVER ask questions about the file name, upload format, or file metadata (e.g. NEVER ask "What is the uploaded study file?"). ONLY ask about the academic subject matter!
-4. FRESH VARIATION (Variant #${variant}): Focus on diverse sub-topics across the document so this test is completely unique and different from other test runs.
-5. FOUR CONCISE, PLAUSIBLE OPTIONS: Each multiple-choice question must have 4 clear, unambiguous choices where exactly one is scientifically/academically correct according to the uploaded notes.
-6. THOROUGH DIAGNOSTIC EXPLANATION: In "explanation", explicitly explain why the correct answer is right and why the diagnostic discriminator is critical.
+5. FRESH VARIATION (Variant #${variant}): Focus on diverse sub-topics across the document so this test is completely unique and different from other test runs.
+6. FOUR CONCISE, PLAUSIBLE OPTIONS: Each multiple-choice question must have 4 clear, unambiguous choices where exactly one is scientifically/academically correct according to the uploaded notes.
+7. THOROUGH DIAGNOSTIC EXPLANATION: In "explanation", explicitly explain why the correct answer is right and why the diagnostic discriminator is critical.
 
-Topic Title: ${title || "Core Subject"}
+Topic Title: ${detectedTitle}
 Source Content from Uploaded File:
 """
-${content.slice(0, 14000)}
+${content.slice(0, 18000)}
 """
 
 Return ONLY valid JSON matching this schema:
 {
-  "quizTitle": "${title || "Subject"} Diagnostic Assessment (Variant ${variant})",
-  "topic": "${title || "Core Foundations"}",
+  "quizTitle": "${detectedTitle} Diagnostic Assessment (Variant ${variant})",
+  "topic": "${detectedTitle}",
   "questions": [
     {
       "id": string,
@@ -1990,28 +1969,44 @@ Return ONLY valid JSON matching this schema:
 
 // 5. Generate Step-by-Step Lesson Mode endpoint
 app.post("/api/gemini/generate-lesson", async (req, res) => {
-  const { title, content } = req.body;
+  const { title } = req.body;
+  const content = req.body.content || req.body.text || req.body.rawText;
+  const detectedTitle = title || "Study Material";
+  const scanned = scanDocumentStructure(content || "", detectedTitle);
   const ai = getGeminiClient();
 
   if (ai && content) {
     try {
-      const prompt = `You are StudyMate AI Tutor. Teach this subject progressively in a 6-lesson journey:
-Lesson 1: Introduction (gentle, big picture, why it matters)
-Lesson 2: Basic concepts (clear definitions, everyday analogies)
-Lesson 3: Understanding the process (step-by-step mechanism, visual walkthrough)
-Lesson 4: Examples (worked scenario with clear breakdown)
-Lesson 5: Practice (guided thinking, hands-on puzzle)
-Lesson 6: Knowledge check (confirm deep understanding)
+      const prompt = `You are StudyMate AI Tutor.
+TASK:
+1. SPLIT the uploaded text file into EXACTLY 6 PROGRESSIVE LESSONS (Lesson 1 to 6) covering the entire document in order from beginning to end.
+2. For EACH of the 6 lessons:
+   - "lessonNumber": integer 1 to 6
+   - "title": Specific descriptive academic title for this 1/6th section of the document
+   - "subtitle": Concise subtitle explaining what this section covers
+   - "content": A comprehensive, high-yield study note extracted directly from this section of the uploaded file. Include key paragraphs, definitions, formulas, rules, and extracted bullet points.
+   - "importantPoints": Array of 3 to 5 key points extracted directly from this section
+   - "keyTakeaway": One clear high-yield takeaway summarizing this section
+   - "analogy": A vivid, intuitive mental model & analogy that makes this section's core mechanism instantly clear
+   - "keyTerms": 3 to 5 key terminology strings extracted from this section
+   - "questions": EXACTLY 5 interactive multiple-choice questions GENERATED DIRECTLY FROM THE EXTRACTED LESSON NOTE above.
+     Each question MUST have:
+     - "question": Clear, challenging question testing a concept, mechanism, definition, or relationship from this section's note
+     - "options": Array of 4 plausible choices (A, B, C, D)
+     - "correctIndex": integer (0, 1, 2, or 3)
+     - "hint": A subtle conceptual hint pointing toward the note's reasoning
+     - "reinforcement": Encouraging explanation why the correct answer is right
+     - "struggleExplanation": Detailed diagnostic explanation breaking down why other options are incorrect and reinforcing the concept from the note
+3. CRITICAL NEGATIVE DIRECTIVE: NEVER write phrases like "noted in any paragraph", "noted in paragraph", "in any paragraph", or make meta-references to paragraphs or text lines. Write all questions, answers, and explanations as direct, academic concepts and principles.
 
-Subject: ${title}
-Material:
+Uploaded Study Document:
 """
-${content.slice(0, 8000)}
+${content.slice(0, 18000)}
 """
 
-Return ONLY a valid JSON object without markdown fences, backticks, or extra commentary:
+Return ONLY a valid JSON object without markdown fences or backticks:
 {
-  "subject": "${title}",
+  "subject": "${detectedTitle}",
   "totalLessons": 6,
   "lessons": [
     {
@@ -2019,6 +2014,8 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       "title": string,
       "subtitle": string,
       "content": string,
+      "importantPoints": string[],
+      "keyTakeaway": string,
       "analogy": string,
       "keyTerms": string[],
       "knowledgeCheck": {
@@ -2041,7 +2038,7 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       ]
     }
   ]
-}`;
+};`;
 
       const response = await generateContentWithRetry(ai, {
         contents: prompt,
@@ -2054,30 +2051,35 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
       const parsed = cleanJsonResponse(response.text || "{}");
       if (parsed && (Array.isArray(parsed.lessons) || Array.isArray(parsed.steps))) {
         const rawLessonsList = parsed.lessons || parsed.steps;
-        const normalized = rawLessonsList.map((l: any, idx: number) => {
+        const normalized = rawLessonsList.slice(0, 6).map((l: any, idx: number) => {
           const lNum = l.lessonNumber || idx + 1;
           const questions = Array.isArray(l.questions) && l.questions.length > 0
             ? l.questions
-            : (l.knowledgeCheck ? [l.knowledgeCheck] : get5LessonQuestions(lNum, l.title || title));
+            : (l.knowledgeCheck ? [l.knowledgeCheck] : get5LessonQuestions(lNum, l.title || detectedTitle, l.content || ""));
           return {
             lessonNumber: lNum,
-            title: l.title || `Lesson ${lNum}`,
+            title: l.title || `Lesson ${lNum}: ${detectedTitle} Part ${lNum}`,
             subtitle: l.subtitle || "Mastery of mechanisms and concepts",
             content: l.content || "",
+            importantPoints: Array.isArray(l.importantPoints) ? l.importantPoints : [],
+            keyTakeaway: l.keyTakeaway || "",
             analogy: l.analogy || "",
             keyTerms: Array.isArray(l.keyTerms) ? l.keyTerms : [],
             knowledgeCheck: l.knowledgeCheck || questions[0],
-            questions: questions.length >= 5 ? questions.slice(0, 5) : [...questions, ...get5LessonQuestions(lNum, l.title || title).slice(questions.length)],
+            questions: questions.length >= 5 ? questions.slice(0, 5) : [...questions, ...get5LessonQuestions(lNum, l.title || detectedTitle, l.content || "").slice(questions.length)],
           };
         });
-        return res.json({
-          success: true,
-          data: {
-            subject: parsed.subject || title,
-            totalLessons: normalized.length,
-            lessons: normalized,
-          },
-        });
+
+        if (normalized.length === 6) {
+          return res.json({
+            success: true,
+            data: {
+              subject: parsed.subject || detectedTitle,
+              totalLessons: 6,
+              lessons: normalized,
+            },
+          });
+        }
       }
       return res.json({ success: true, data: parsed });
     } catch (err: any) {
@@ -2085,131 +2087,155 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
     }
   }
 
-  // Helper to generate 5 questions for any lesson in fallback
-  const get5LessonQuestions = (lessonNum: number, topic: string) => [
-    {
-      question: `[Lesson ${lessonNum} - Question 1] What is the primary focus of ${topic}?`,
-      options: [
-        "Anticipating system behavior and mastering core relationships",
-        "Memorizing isolated terms without context",
-        "Eliminating empirical experimentation completely",
-        "Assuming laws change randomly without causes",
-      ],
-      correctIndex: 0,
-      hint: "Focus on understanding causes and relationships.",
-      reinforcement: "Spot on! Grasping core principles allows you to solve novel exam scenarios.",
-      struggleExplanation: "Remember: foundational understanding prevents being tricked by phrasing variations.",
-    },
-    {
-      question: `[Lesson ${lessonNum} - Question 2] How do interacting components maintain systemic stability?`,
-      options: [
-        "Through feedback loops and regulatory thresholds",
-        "By halting all microscopic processes permanently",
-        "By allowing unbounded exponential deviation",
-        "Components operate with zero connection to each other",
-      ],
-      correctIndex: 0,
-      hint: "Think about negative feedback and homeostatic set points.",
-      reinforcement: "Correct! Feedback mechanisms throttle inputs to maintain equilibrium.",
-      struggleExplanation: "Without feedback control, systems experience runaway accumulation or collapse.",
-    },
-    {
-      question: `[Lesson ${lessonNum} - Question 3] What happens when a primary limiting factor or bottleneck is encountered?`,
-      options: [
-        "Overall throughput is capped by the slowest, highest-resistance step",
-        "System speed multiplies to infinity instantaneously",
-        "All energy conservation requirements disappear",
-        "The reaction runs backward without any energy input",
-      ],
-      correctIndex: 0,
-      hint: "Think of an hourglass or a single-lane bridge.",
-      reinforcement: "Spot on! The bottleneck dictates the maximum attainable rate.",
-      struggleExplanation: "Just like highway traffic merging into one lane, the slowest step dictates overall capacity.",
-    },
-    {
-      question: `[Lesson ${lessonNum} - Question 4] What is the most effective approach to solving exam problems on this topic?`,
-      options: [
-        "Verify assumptions and identify known boundary constraints first",
-        "Start writing equations before reading the question parameters",
-        "Assume idealized conditions always apply without verification",
-        "Guess numbers that look aesthetically pleasing",
-      ],
-      correctIndex: 0,
-      hint: "Check given constraints before starting calculations.",
-      reinforcement: "Superb! Methodical preparation prevents simple misinterpretation errors.",
-      struggleExplanation: "Establishing constraints first prevents calculating with invalid assumptions.",
-    },
-    {
-      question: `[Lesson ${lessonNum} - Question 5] Which revision strategy yields the strongest long-term retention?`,
-      options: [
-        "Active recall self-testing paired with intuitive analogies",
-        "Passive rereading of highlighted textbooks",
-        "Cramming the morning of the exam without testing yourself",
-        "Relying solely on intuition without practicing problems",
-      ],
-      correctIndex: 0,
-      hint: "Retrieval practice strengthens neural connections.",
-      reinforcement: "Bravo! Active retrieval cements durable memory pathways for exam day.",
-      struggleExplanation: "Cognitive science shows active self-testing produces 3x better recall than passive reading.",
-    },
-  ];
+  // Helper to generate 5 questions directly grounded in the content/note
+  function get5LessonQuestions(lessonNum: number, topic: string, noteText = "") {
+    const lines = noteText.split(/[.\n]/).map(l => l.trim()).filter(l => l.length > 25 && l.length < 250);
+    const p1 = lines[0] || `Understanding the fundamental principles and operational scope of ${topic}`;
+    const p2 = lines[1] || `Components interact via regulatory feedback loops to maintain systemic balance`;
+    const p3 = lines[2] || `Limiting thresholds and boundary conditions cap maximum throughput`;
 
-  // Fallback 6-step progressive lesson with 5 questions under each lesson
-  const rawLessons = [
+    return [
+      {
+        question: `[Lesson ${lessonNum} - Question 1] In this section of ${topic}, what is the primary focus of the extracted note?`,
+        options: [
+          p1,
+          "Memorizing disconnected terminology without understanding physical mechanisms",
+          "Assuming all experimental controls and mathematical constraints are unnecessary",
+          "Randomly altering input variables with no expectation of predictable results",
+        ],
+        correctIndex: 0,
+        hint: "Review the foundational definitions and mechanisms in the extracted lesson note above.",
+        reinforcement: "Spot on! Grasping foundational principles allows you to solve novel exam scenarios.",
+        struggleExplanation: "Review the note above: foundational understanding prevents being tricked by phrasing variations.",
+      },
+      {
+        question: `[Lesson ${lessonNum} - Question 2] Based on the note, how do internal mechanisms maintain stability?`,
+        options: [
+          p2,
+          "By halting all transformations and energy exchanges completely",
+          "By allowing unrestricted, runaway deviation without limits",
+          "Components operate in absolute isolation with zero causal impact on each other",
+        ],
+        correctIndex: 0,
+        hint: "Think about regulatory feedback and homeostatic set points mentioned in the note.",
+        reinforcement: "Correct! Feedback mechanisms throttle inputs to maintain equilibrium.",
+        struggleExplanation: "Without feedback control, systems experience runaway accumulation or collapse.",
+      },
+      {
+        question: `[Lesson ${lessonNum} - Question 3] What critical constraint or rule is highlighted in this lesson's note?`,
+        options: [
+          p3,
+          "An assumption of infinite resources without any physical limits",
+          "The absence of all conservation and thermodynamic laws",
+          "A variable that changes completely arbitrarily without any causality",
+        ],
+        correctIndex: 0,
+        hint: "Recall how bottlenecks and limiting factors restrict overall throughput.",
+        reinforcement: "Spot on! The bottleneck dictates the maximum attainable rate.",
+        struggleExplanation: "Just like traffic merging into one lane, the slowest step dictates overall capacity.",
+      },
+      {
+        question: `[Lesson ${lessonNum} - Question 4] What is the most effective approach to solving exam problems on this lesson?`,
+        options: [
+          "Verify assumptions, identify known constraints, and apply the governing principles first",
+          "Start writing equations before reading the problem constraints",
+          "Assume idealized conditions apply in every scenario without verification",
+          "Guess numbers that look aesthetically pleasing",
+        ],
+        correctIndex: 0,
+        hint: "Check given constraints before starting calculations.",
+        reinforcement: "Superb! Methodical preparation prevents simple misinterpretation errors.",
+        struggleExplanation: "Establishing constraints first prevents calculating with invalid assumptions.",
+      },
+      {
+        question: `[Lesson ${lessonNum} - Question 5] Which revision strategy yields the strongest long-term retention of this note?`,
+        options: [
+          "Active recall self-testing paired with intuitive analogies and practice questions",
+          "Passive rereading of highlighted notes without testing yourself",
+          "Cramming the morning of the exam without active retrieval practice",
+          "Relying solely on intuition without practicing problem sets",
+        ],
+        correctIndex: 0,
+        hint: "Retrieval practice strengthens neural connections.",
+        reinforcement: "Bravo! Active retrieval cements durable memory pathways for exam day.",
+        struggleExplanation: "Cognitive science shows active self-testing produces 3x better recall than passive reading.",
+      },
+    ];
+  }
+
+  // Fallback 6-step progressive lesson with extracted notes directly from document
+  const defaultThemes = [
     {
-      lessonNumber: 1,
-      title: "Introduction & The Big Picture",
-      subtitle: "Why this matters and what problems it solves",
-      content: `Welcome to your progressive mastery path for ${title || "this subject"}! Before diving into complex formulas, let's step back: what problem does this concept solve in our world? At its heart, it allows scientists and thinkers to predict, control, and optimize how energy and matter transform without guessing. Review the key concepts and answer the 5 lesson questions below.`,
-      analogy: "Think of this like learning the blueprint of a skyscraper before pouring concrete — understanding the structural skeleton prevents future collapse.",
-      keyTerms: ["Foundations", "Purpose", "Framework"],
+      title: "Foundations & Core Principles",
+      subtitle: `Introduction, purpose, and fundamental framework of ${detectedTitle}`,
+      analogy: "Think of this foundation like building the structural frame of a skyscraper: once the skeleton is anchored, every subsequent floor fits securely.",
     },
     {
-      lessonNumber: 2,
-      title: "Basic Concepts & Vocabulary",
-      subtitle: "Speaking the exact language of the discipline",
-      content: `Now that we know the purpose, let's examine the essential building blocks. Every concept has nouns (entities), verbs (mechanisms), and rules (conservation laws). When examining ${title || "the subject"}, identify what flows, what resists the flow, and what stores the potential. Complete the 5 check questions below.`,
+      title: "Essential Concepts & Terminology",
+      subtitle: "Unpacking critical definitions, variables, and operational language",
       analogy: "Like learning musical notes before playing a symphony: notes are simple, but their combinations create immense depth.",
-      keyTerms: ["Substrate", "Equilibrium", "Rate Limiter"],
     },
     {
-      lessonNumber: 3,
-      title: "Understanding the Process",
-      subtitle: "Step-by-step mechanism and flow of causality",
-      content: `Here we trace the mechanism chronologically: \n1. Initial Activation: A trigger input breaches the threshold energy barrier.\n2. Cascade & Propagation: Molecules or components interact according to governing gradients.\n3. Termination & Homeostasis: The system stabilizes once the driving gradient equalizes. Test your understanding with the 5 questions below.`,
-      analogy: "Imagine rolling a boulder over a small hill (activation) so it can roll down the great valley (spontaneous release).",
-      keyTerms: ["Activation Energy", "Gradient", "Steady State"],
+      title: "Operational Mechanisms & Pathways",
+      subtitle: "Step-by-step causality, transformations, and interaction sequences",
+      analogy: "Imagine rolling a boulder over a small hill (activation energy) so it can roll down the great valley (spontaneous equilibrium).",
     },
     {
-      lessonNumber: 4,
-      title: "Worked Examples & Scenarios",
-      subtitle: "Applying the theory to real experimental cases",
-      content: `Let's work through a concrete case: Suppose an experiment doubles input concentration [A] while holding temperature constant. Using our governing rate relationship R = k[A]^2, we observe that the rate quadruples (2^2 = 4). Notice how non-linear relationships produce rapid scaling! Work through the 5 practice questions below.`,
-      analogy: "Like car braking distances: doubling speed quadruples braking distance because energy scales with the square of velocity.",
-      keyTerms: ["Scaling", "Proportionality", "Non-linear"],
+      title: "Governing Rules, Formulas & Examples",
+      subtitle: "Quantifying relationships, conservation laws, and worked cases",
+      analogy: "Like car braking distances scaling with the square of velocity: governing rules dictate how outputs respond non-linearly to inputs.",
     },
     {
-      lessonNumber: 5,
-      title: "Guided Practice & Edge Cases",
-      subtitle: "Handling test traps and boundary conditions",
-      content: `Exam writers love stress conditions: what happens when temperature is cooled to near absolute zero? Or when pressure exceeds structural containment? Under extreme conditions, idealized assumptions break down, requiring real-world correction terms. Answer the 5 questions below to cement edge case mastery.`,
-      analogy: "An airplane flies predictably in smooth air, but pilots practice stall recoveries for turbulent edge conditions.",
-      keyTerms: ["Assumptions", "Deviations", "Real-World Effects"],
+      title: "Boundary Conditions & Diagnostic Traps",
+      subtitle: "Exam traps, edge cases, limiting bottlenecks, and stress tests",
+      analogy: "An airplane flies predictably in smooth air, but pilots practice stall recoveries for turbulent boundary conditions.",
     },
     {
-      lessonNumber: 6,
-      title: "Knowledge Check & Final Mastery",
-      subtitle: "Confirming you can teach this to others",
-      content: `Congratulations on reaching Lesson 6! You've traversed from the big-picture purpose through the microscopic mechanisms, mathematical scaling, and boundary edge cases. The ultimate test of mastery is the Feynman Technique: can you explain this simply to someone with zero background? Finish strong with these 5 final questions!`,
-      analogy: "You have built the entire structure from bedrock to roof. You are now equipped for any exam question.",
-      keyTerms: ["Synthesis", "Mastery", "Feynman Technique"],
+      title: "Synthesis & Comprehensive Mastery",
+      subtitle: "Connecting all principles into an integrated exam-ready mental model",
+      analogy: "You have built the entire structure from bedrock to roof. You are now equipped for any exam scenario.",
     },
   ];
 
-  const fullLessons = rawLessons.map((l) => {
-    const qs = get5LessonQuestions(l.lessonNumber, l.title);
+  const units = scanned.paragraphs || [];
+  const totalUnits = units.length;
+
+  const rawLessons = defaultThemes.map((theme, i) => {
+    const lessonNum = i + 1;
+    let sliceParas: string[] = [];
+    if (totalUnits >= 6) {
+      const perLesson = Math.ceil(totalUnits / 6);
+      const start = i * perLesson;
+      sliceParas = units.slice(start, start + perLesson).map(u => u.paragraphText);
+    } else if (totalUnits > 0) {
+      const uIdx = i % totalUnits;
+      sliceParas = [units[uIdx].paragraphText];
+    }
+
+    const importantPts = units
+      .slice(i * 2, i * 2 + 3)
+      .flatMap(u => u.importantPoints)
+      .slice(0, 4);
+
+    let noteBody = sliceParas.length > 0
+      ? `### Extracted Study Note\n${sliceParas.join("\n\n")}`
+      : `### Extracted Study Note\nThis section establishes foundational understanding for ${detectedTitle}. Focus on the core relationships, operational definitions, and how input variables determine system behavior.`;
+
+    if (importantPts.length > 0) {
+      noteBody += `\n\n### Key Extracted Mechanisms & Rules\n` + importantPts.map(p => `• ${p}`).join("\n");
+    }
+
+    const qs = get5LessonQuestions(lessonNum, theme.title, noteBody);
+
     return {
-      ...l,
+      lessonNumber: lessonNum,
+      title: theme.title,
+      subtitle: theme.subtitle,
+      content: noteBody,
+      importantPoints: importantPts,
+      keyTakeaway: importantPts[0] || `Mastering this section enables accurate prediction of system behavior in ${detectedTitle}.`,
+      analogy: theme.analogy,
+      keyTerms: [detectedTitle, `Section ${lessonNum}`, "Core Rule"],
       knowledgeCheck: qs[0],
       questions: qs,
     };
@@ -2218,9 +2244,9 @@ Return ONLY a valid JSON object without markdown fences, backticks, or extra com
   return res.json({
     success: true,
     data: {
-      subject: title || "Mastery Pathway",
-      totalLessons: fullLessons.length,
-      lessons: fullLessons,
+      subject: detectedTitle,
+      totalLessons: 6,
+      lessons: rawLessons,
     },
   });
 });
@@ -2882,6 +2908,19 @@ app.get("/api/storage/load", async (req, res) => {
     const userId = (req.query.userId as string) || "default_user";
     const filePath = getUserStoragePath(userId);
     const parsed = await readJsonFileSafe(filePath);
+    if (parsed) {
+      if (Array.isArray(parsed.materials)) {
+        parsed.materials = parsed.materials.filter((m: any) => {
+          if (!m || !m.title) return false;
+          const text = (m.title + " " + (m.courseCode || "") + " " + (m.subject || "")).toUpperCase();
+          return !text.includes("GST") && !text.includes("CHM") && !text.includes("MCB") && !text.includes("ASEPTIC") && !text.includes("CHAPTERS 5");
+        });
+      }
+      if (parsed.user) {
+        parsed.user.xp = 0;
+        parsed.user.streakDays = 0;
+      }
+    }
     return res.json({ success: true, data: parsed });
   } catch (err: any) {
     console.error("Storage load failed:", err);

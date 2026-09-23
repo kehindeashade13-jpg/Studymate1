@@ -5,7 +5,6 @@ import {
   Plus,
   Send,
   Pin,
-  Flame,
   Shield,
   Lock,
   Globe,
@@ -1172,11 +1171,6 @@ export const GroupsView: React.FC = () => {
                             </div>
 
                             <div className="flex items-center gap-2">
-                              <div className="flex items-center gap-1 text-xs text-orange-600 font-bold">
-                                <Flame className="w-4 h-4 fill-orange-500" />
-                                <span>{member.studyStreak || 3}d</span>
-                              </div>
-
                               {member.id !== user.id && (
                                 <button
                                   type="button"

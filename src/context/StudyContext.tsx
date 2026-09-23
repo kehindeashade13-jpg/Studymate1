@@ -176,6 +176,22 @@ interface StudyContextType {
 
 const StudyContext = createContext<StudyContextType | undefined>(undefined);
 
+// Ghost / legacy demo material filter (purges unexpected GST, CHM, MCB files)
+const isGhostOrLegacyMaterial = (m: any): boolean => {
+  if (!m || !m.id || !m.title) return true;
+  const t = (m.title + " " + (m.courseCode || "") + " " + (m.subject || "")).toUpperCase();
+  if (
+    t.includes("GST") ||
+    t.includes("CHM") ||
+    t.includes("MCB") ||
+    t.includes("ASEPTIC") ||
+    t.includes("CHAPTERS 5")
+  ) {
+    return true;
+  }
+  return false;
+};
+
 export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Load state from localStorage or mock
   const [user, setUser] = useState<UserProfile>(() => {
@@ -183,18 +199,18 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const saved = localStorage.getItem("studymate_user");
       if (saved && saved.includes("Sarah Chen")) {
         localStorage.removeItem("studymate_user");
-        return initialUser;
+        return { ...initialUser, xp: 0, streakDays: 0 };
       }
       if (saved) {
         const parsed = JSON.parse(saved);
         if (!parsed.avatar || parsed.avatar.includes("images.unsplash.com")) {
           parsed.avatar = "/studymate_logo.jpg";
         }
-        return parsed;
+        return { ...parsed, xp: 0, streakDays: 0 };
       }
-      return initialUser;
+      return { ...initialUser, xp: 0, streakDays: 0 };
     } catch {
-      return initialUser;
+      return { ...initialUser, xp: 0, streakDays: 0 };
     }
   });
 
@@ -209,12 +225,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const saved = localStorage.getItem("studymate_materials");
       if (saved) {
-        // If localStorage contains legacy test items from previous runs, clean them out
+        // If localStorage contains legacy ghost files (GST, CHM, MCB), clean them out
         if (
-          saved.includes("GST102") ||
-          saved.includes("MCB 203") ||
-          saved.includes("GST 102") ||
-          saved.includes("MCB203") ||
+          saved.includes("GST") ||
+          saved.includes("MCB") ||
+          saved.includes("CHM") ||
           saved.includes("ASEPTIC") ||
           saved.includes("Chapters 5")
         ) {
@@ -228,18 +243,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const valid = parsed
-            .filter((m: any) => {
-              if (!m || !m.id || !m.title) return false;
-              const t = (m.title + " " + (m.courseCode || "")).toUpperCase();
-              return (
-                !t.includes("GST102") &&
-                !t.includes("MCB 203") &&
-                !t.includes("GST 102") &&
-                !t.includes("MCB203") &&
-                !t.includes("ASEPTIC") &&
-                !t.includes("CHAPTERS 5")
-              );
-            })
+            .filter((m: any) => !isGhostOrLegacyMaterial(m))
             .map((m: StudyMaterial) => sanitizeMaterial(m));
           return valid;
         }
@@ -440,18 +444,7 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const d = json.data;
           if (Array.isArray(d.materials)) {
             const valid = d.materials
-              .filter((m: any) => {
-                if (!m || !m.id || !m.title) return false;
-                const t = (m.title + " " + (m.courseCode || "")).toUpperCase();
-                return (
-                  !t.includes("GST102") &&
-                  !t.includes("MCB 203") &&
-                  !t.includes("GST 102") &&
-                  !t.includes("MCB203") &&
-                  !t.includes("ASEPTIC") &&
-                  !t.includes("CHAPTERS 5")
-                );
-              })
+              .filter((m: any) => !isGhostOrLegacyMaterial(m))
               .map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
             setMaterials(valid);
           }
@@ -470,6 +463,8 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               ...prev,
               ...d.user,
               id: prev.id || d.user.id,
+              xp: 0,
+              streakDays: 0,
             }));
           }
         }
@@ -611,8 +606,8 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const addXP = (amount: number, reason?: string) => {
-    setUser((prev) => ({ ...prev, xp: prev.xp + amount }));
+  const addXP = (_amount: number, _reason?: string) => {
+    // XP and streaks removed across application per user specification
   };
 
   const updateUser = (updates: Partial<UserProfile>) => {

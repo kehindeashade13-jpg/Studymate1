@@ -478,6 +478,109 @@ export const LibraryView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Subtopics & Granular Paragraph Points */}
+                {currentNotes?.subtopicsWithNotes && currentNotes.subtopicsWithNotes.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Curriculum Subtopics & Key Concept Points</span>
+                      </h3>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        {currentNotes.subtopicsWithNotes.length} Subtopics Scanned
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {currentNotes.subtopicsWithNotes.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="p-4 rounded-2xl bg-[#FAF9F5] border border-[#E8E5DD] space-y-2.5 hover:border-indigo-300 transition"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ECE7DC] pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                                {idx + 1}
+                              </span>
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900">
+                                <CleanFormattedText content={item.subtopic} />
+                              </h4>
+                            </div>
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-white border border-[#DDD9CE] text-slate-600">
+                              {item.paragraphReference ? item.paragraphReference.replace(/paragraph[s]?/gi, "Section") : `Section ${idx + 1}`}
+                            </span>
+                          </div>
+
+                          {/* Important Points from this paragraph */}
+                          <div className="space-y-1.5 pl-1">
+                            <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                              Important Points:
+                            </p>
+                            <ul className="space-y-1.5">
+                              {item.importantPoints.map((pt, ptIdx) => (
+                                <li key={ptIdx} className="text-xs text-slate-700 flex items-start gap-2 leading-relaxed">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                                  <div>
+                                    <CleanFormattedText content={pt} />
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          {/* Key Takeaway */}
+                          {item.keyTakeaway && (
+                            <div className="p-2.5 rounded-xl bg-indigo-50/60 border border-indigo-100 text-[11px] text-indigo-900 flex items-start gap-2">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                              <div className="leading-snug">
+                                <span className="font-bold">Key Takeaway: </span>
+                                <CleanFormattedText content={item.keyTakeaway} />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : selectedMaterialForNotes.subtopics && selectedMaterialForNotes.subtopics.length > 0 ? (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Document Subtopics</span>
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedMaterialForNotes.subtopics.map((sub, sIdx) => (
+                        <span
+                          key={sIdx}
+                          className="px-2.5 py-1 rounded-xl bg-[#FAF9F5] border border-[#E8E5DD] text-xs font-medium text-slate-700"
+                        >
+                          {sub}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Important Details Extracted from Document */}
+                {currentNotes?.importantDetails && currentNotes.importantDetails.length > 0 && (
+                  <div className="space-y-2.5 p-4 rounded-2xl bg-[#FAF9F5] border border-[#E8E5DD]">
+                    <h3 className="text-xs font-extrabold text-amber-800 uppercase tracking-wider flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Key Extracted Rules, Formulas & Examination Points</span>
+                    </h3>
+                    <ul className="space-y-1.5">
+                      {currentNotes.importantDetails.map((detail, dIdx) => (
+                        <li key={dIdx} className="text-xs text-slate-700 flex items-start gap-2 leading-relaxed">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5 shrink-0" />
+                          <div>
+                            <CleanFormattedText content={detail} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Definitions & Terms strictly for this uploaded file */}
                 {(currentNotes?.definitions?.length || selectedMaterialForNotes.definitions?.length) ? (
                   <div className="space-y-3">

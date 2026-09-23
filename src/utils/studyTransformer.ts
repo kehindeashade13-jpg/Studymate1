@@ -239,10 +239,56 @@ export function cleanToNaturalEnglish(text: string): string {
   return result || cleaned.trim();
 }
 
-// Generate 5 rigorous, distinct questions for any lesson
-export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string, mainTopic = "Study Material"): LessonQuestion[] {
-  return [
-    {
+// Generate 5 rigorous, distinct questions for any lesson directly grounded in the extracted note
+export function create5QuestionsForLesson(
+  lessonNum: number,
+  lessonTitle: string,
+  mainTopic = "Study Material",
+  noteData?: {
+    noteContent?: string;
+    importantPoints?: string[];
+    definitions?: { term: string; definition: string }[];
+    keyTerms?: string[];
+  }
+): LessonQuestion[] {
+  const points = noteData?.importantPoints?.filter(Boolean) || [];
+  const defs = noteData?.definitions?.filter(Boolean) || [];
+  const terms = noteData?.keyTerms?.filter(Boolean) || [];
+
+  const questions: LessonQuestion[] = [];
+
+  // Q1: Definition or Primary Concept
+  if (defs.length > 0 && defs[0].term && defs[0].definition) {
+    const d = defs[0];
+    questions.push({
+      question: `In Lesson ${lessonNum} (${lessonTitle}), what is the primary definition of "${d.term}"?`,
+      options: [
+        d.definition,
+        `A secondary peripheral effect that does not impact ${mainTopic}.`,
+        "An obsolete term with no application in current models.",
+        "A condition where system interactions cease completely without causes.",
+      ],
+      correctIndex: 0,
+      hint: `Recall the definition of ${d.term} highlighted in the lesson note above.`,
+      reinforcement: `Correct! The lesson note defines "${d.term}" as: ${d.definition}`,
+      struggleExplanation: `Review the terminology section in the extracted note above. ${d.term} is foundational for understanding ${lessonTitle}.`,
+    });
+  } else if (terms.length > 0) {
+    questions.push({
+      question: `In Lesson ${lessonNum}, what role does "${terms[0]}" play within ${lessonTitle}?`,
+      options: [
+        `It serves as an essential conceptual anchor and governing factor in ${mainTopic}.`,
+        "It is an unrelated concept omitted from practical applications.",
+        "It permanently suspends all reactions and energy transformations.",
+        "It acts as a random variable with no predictive significance.",
+      ],
+      correctIndex: 0,
+      hint: `Consider how "${terms[0]}" is presented in the extracted note.`,
+      reinforcement: `Spot on! "${terms[0]}" is a critical concept introduced in this section of ${mainTopic}.`,
+      struggleExplanation: `Refer back to the key terms and core concepts in the lesson note to see how ${terms[0]} governs the system.`,
+    });
+  } else {
+    questions.push({
       question: `[Lesson ${lessonNum} - Question 1] What is the primary conceptual principle of ${lessonTitle}?`,
       options: [
         `Understanding the core mechanisms and operational framework of ${mainTopic}.`,
@@ -254,8 +300,27 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
       hint: "Reflect on the foundational definitions introduced at the start of this lesson.",
       reinforcement: "Excellent! Grasping foundational principles makes subsequent mechanisms intuitive.",
       struggleExplanation: "Review the introductory section of the lesson to see the core premise.",
-    },
-    {
+    });
+  }
+
+  // Q2: Key Mechanism or Causal Relationship
+  if (points.length > 0) {
+    const pt = points[0].replace(/^[-*•\d.\s]+/, "").trim();
+    questions.push({
+      question: `Based on the extracted note for Lesson ${lessonNum}, which statement accurately describes the underlying mechanism?`,
+      options: [
+        pt,
+        `Components operate in total isolation without any causal relationship.`,
+        "The system reaches infinite capacity without any energy or material inputs.",
+        "All governing constraints are bypassed under standard operating conditions.",
+      ],
+      correctIndex: 0,
+      hint: "Look closely at the key mechanisms and important points in the lesson note.",
+      reinforcement: `Superb! As stated in the extracted note: ${pt}`,
+      struggleExplanation: "Carefully re-read the mechanism bullet points in the note above to verify how causes lead to effects.",
+    });
+  } else {
+    questions.push({
       question: `[Lesson ${lessonNum} - Question 2] In the operational pathways of ${mainTopic}, how do interacting components maintain balance?`,
       options: [
         "Through regulatory feedback loops that adjust rates in response to state changes.",
@@ -267,8 +332,42 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
       hint: "Think about regulatory feedback and homeostatic balance.",
       reinforcement: "Spot on! Feedback loops stabilize systemic throughput within safe operating parameters.",
       struggleExplanation: "Systems rely on feedback loops to throttle inputs when operational thresholds are reached.",
-    },
-    {
+    });
+  }
+
+  // Q3: Critical Constraint, Rule, or Second Term
+  if (defs.length > 1 && defs[1].term && defs[1].definition) {
+    const d2 = defs[1];
+    questions.push({
+      question: `What critical condition or mechanism does "${d2.term}" describe in this section?`,
+      options: [
+        d2.definition,
+        "A negligible deviation that requires no experimental controls.",
+        "A hypothetical scenario with zero physical or mathematical validity.",
+        "An assumption that physical laws fluctuate randomly over time.",
+      ],
+      correctIndex: 0,
+      hint: `Check the description of ${d2.term} in the lesson note.`,
+      reinforcement: `Exact! In this section of ${mainTopic}, ${d2.term} signifies: ${d2.definition}`,
+      struggleExplanation: `Re-check the definitions and key points in the extracted study note for ${d2.term}.`,
+    });
+  } else if (points.length > 1) {
+    const pt2 = points[1].replace(/^[-*•\d.\s]+/, "").trim();
+    questions.push({
+      question: `According to the note, what critical condition or factor governs ${lessonTitle}?`,
+      options: [
+        pt2,
+        "Energy and mass conservation laws are suspended indefinitely.",
+        "The fastest step has zero effect on the overall rate of progress.",
+        "External environmental factors never exert any influence on internal state.",
+      ],
+      correctIndex: 0,
+      hint: "Identify the constraint or rule emphasized in the second key point.",
+      reinforcement: `Spot on! As established in the lesson: ${pt2}`,
+      struggleExplanation: "Review the second point in the extracted note above for the exact governing rule.",
+    });
+  } else {
+    questions.push({
       question: `[Lesson ${lessonNum} - Question 3] What is the most critical constraint or limiting factor highlighted in ${lessonTitle}?`,
       options: [
         "The resource, energy threshold, or boundary parameter with the lowest availability.",
@@ -280,8 +379,27 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
       hint: "Recall how bottlenecks restrict overall throughput or yield.",
       reinforcement: "Correct! The bottleneck or rate-limiting step caps maximum system throughput.",
       struggleExplanation: "A limiting factor acts as the bottleneck dictating overall system yield.",
-    },
-    {
+    });
+  }
+
+  // Q4: Diagnostic Application / Worked Scenario
+  if (points.length > 2) {
+    const pt3 = points[2].replace(/^[-*•\d.\s]+/, "").trim();
+    questions.push({
+      question: `How should a student apply the principles of ${lessonTitle} when evaluating a diagnostic scenario?`,
+      options: [
+        `Recognize that ${pt3.toLowerCase().replace(/^[a-z]/, (c) => c.toLowerCase())}.`,
+        "Apply equations blindly without checking whether the initial conditions match.",
+        "Assume the highest number given in the problem statement is always the correct value.",
+        "Disregard the causal mechanism and rely purely on guessing.",
+      ],
+      correctIndex: 0,
+      hint: "Connect the scenario back to the third key point extracted in the lesson note.",
+      reinforcement: "Excellent diagnostic thinking! Applying verified principles prevents careless exam mistakes.",
+      struggleExplanation: "Systematic problem solving requires grounding every step in the rules established in the lesson note.",
+    });
+  } else {
+    questions.push({
       question: `[Lesson ${lessonNum} - Question 4] How should a student approach an exam problem testing ${lessonTitle}?`,
       options: [
         "Identify known boundary conditions, verify units, and state the governing equation first.",
@@ -293,21 +411,25 @@ export function create5QuestionsForLesson(lessonNum: number, lessonTitle: string
       hint: "Always check constraints, units, and given variables first.",
       reinforcement: "Superb! Methodical problem solving eliminates careless calculation traps.",
       struggleExplanation: "Establishing boundary conditions first ensures calculations are built on sound assumptions.",
-    },
-    {
-      question: `[Lesson ${lessonNum} - Question 5] What cognitive connection reinforces long-term exam retention of this lesson?`,
-      options: [
-        "Relating abstract terminology to intuitive physical analogies and active retrieval drills.",
-        "Rereading the same notes passively without testing yourself.",
-        "Memorizing words without understanding their cause-and-effect relationships.",
-        "Skipping directly to the conclusion without reviewing intermediate mechanisms.",
-      ],
-      correctIndex: 0,
-      hint: "Consider how analogies and self-quizzing strengthen neural pathways.",
-      reinforcement: "Spot on! Concrete mental models anchor abstract principles permanently.",
-      struggleExplanation: "Active retrieval and intuitive analogies yield 3x higher exam retention.",
-    },
-  ];
+    });
+  }
+
+  // Q5: Synthesis, Exam Mastery & Intuitive Analogy
+  questions.push({
+    question: `[Lesson ${lessonNum} - Final Check] What cognitive approach guarantees durable long-term retention of ${lessonTitle}?`,
+    options: [
+      `Connecting the extracted notes to intuitive analogies and validating understanding with active practice questions.`,
+      "Passive rereading of highlighting without attempting self-quizzing.",
+      "Cramming disconnected formulas without grasping cause and effect.",
+      "Skipping core definitions and assuming memorization is unnecessary.",
+    ],
+    correctIndex: 0,
+    hint: "Recall the analogy and active retrieval principles highlighted in this lesson.",
+    reinforcement: `Outstanding! Combining the extracted lesson note with the intuitive mental model cements deep mastery of ${lessonTitle}.`,
+    struggleExplanation: "Active retrieval and intuitive mental models create 3x more durable recall than passive rereading.",
+  });
+
+  return questions;
 }
 
 // Helper to verify a term is a genuine academic concept and not a meta artifact
@@ -1270,88 +1392,15 @@ export function generateFallbackStudyPackage(
     ),
   };
 
-  // 5. Step Lesson (6 rich, pristine academic lessons with 5 questions each)
-  const d0 = definitions[0] || { term: "Core Principle", definition: `The primary conceptual framework governing ${title}.` };
-  const d1 = definitions[1] || { term: "Methodology & Approach", definition: `The systematic techniques and rules applied in ${title}.` };
-  const d2 = definitions[2] || { term: "Operational Criteria", definition: `The standards used to evaluate validity and performance in ${title}.` };
-  const d3 = definitions[3] || { term: "Contextual Framework", definition: `The boundary conditions and scenarios where ${title} applies.` };
-  const d4 = definitions[4] || { term: "Synthesis & Application", definition: `Integrating principles of ${title} to solve real-world problem sets.` };
-
-  const stepLessons: LessonStep[] = [
-    {
-      lessonNumber: 1,
-      title: "Foundational Principles & Core Framework",
-      subtitle: `Unpacking why ${title} matters, primary mechanisms, and foundational terminology`,
-      content: `Welcome to Lesson 1 of **${title}**.\n\n### Foundational Principle: ${d0.term}\n${d0.definition}\n\n### Why This Concept Matters\nEvery subject has anchor ideas that establish the foundation for advanced mastery. In ${title}, understanding this foundational principle gives you the mental model needed to analyze scenarios, interpret evidence, and answer exam questions with precision.\n\n### Key Concepts to Anchor:\n• **${d0.term}**: ${d0.definition}\n• **${d1.term}**: ${d1.definition}\n• **Analytical Scope**: Systematic examination of underlying rules before tackling complex scenarios.\n\nTake a moment to review this core definition before tackling the 5 lesson questions below.`,
-      analogy: `Think of this foundation like building the structural frame of a building: once the frame is sound, adding the details and specific applications is straightforward and stable.`,
-      keyTerms: [d0.term, d1.term, "Core Framework"],
-      knowledgeCheck: create5QuestionsForLesson(1, "Foundations & Overview", title)[0],
-      questions: create5QuestionsForLesson(1, "Foundations & Overview", title),
-      completed: false,
-    },
-    {
-      lessonNumber: 2,
-      title: "Operational Methodologies & Step-by-Step Analysis",
-      subtitle: "Tracing step-by-step pathways, systematic rules, and analytical approaches",
-      content: `In Lesson 2, we build upon our foundation by examining how **${title}** is applied systematically in practice.\n\n### 3-Stage Analytical Pathway\n1. **Identification & Context**: Define the problem, isolate key variables, and identify relevant governing principles (${d0.term}).\n2. **Execution & Translation**: Apply systematic methodology (${d1.term}) to process information and test potential solutions.\n3. **Evaluation & Verification**: Verify findings against established standards (${d2.term}).\n\n### The Precision Principle\nIn academic analysis, accuracy in defining terms and applying rules prevents careless exam errors. Maintaining clarity at each step ensures sound conclusions.`,
-      analogy: "Like navigating using a detailed map: knowing both your current coordinates and the destination route prevents you from taking misleading detours.",
-      keyTerms: [d1.term, "Analytical Method", "Systematic Workflow"],
-      knowledgeCheck: create5QuestionsForLesson(2, "Operational Methods", title)[0],
-      questions: create5QuestionsForLesson(2, "Operational Methods", title),
-      completed: false,
-    },
-    {
-      lessonNumber: 3,
-      title: "Governing Rules & Contextual Boundaries",
-      subtitle: "Understanding constraints, boundary conditions, and subject-specific rules",
-      content: `Every subject operates within defined rules and contextual boundaries. In Lesson 3, we examine how context influences the interpretation of **${title}**.\n\n### ${d3.term}\n${d3.definition}\n\n### Critical Contextual Rules\n• **Scope of Validity**: Theoretical models and rules apply within specified conditions and assumptions.\n• **Nuance & Distinction**: Distinguishing between closely related concepts prevents overgeneralization.\n• **Evidence Requirements**: High-level academic writing requires backing every claim with clear explanations or references.`,
-      analogy: "Like speed limits on different types of roads: the rules of the road adapt logically depending on whether you are on a highway or in a school zone.",
-      keyTerms: [d3.term, "Boundary Rules", "Contextual Scope"],
-      knowledgeCheck: create5QuestionsForLesson(3, "Governing Rules", title)[0],
-      questions: create5QuestionsForLesson(3, "Governing Rules", title),
-      completed: false,
-    },
-    {
-      lessonNumber: 4,
-      title: "Step-by-Step Problem Solving & Diagnostic Scenarios",
-      subtitle: "Mastering practical heuristics, exam workflows, and avoiding common pitfalls",
-      content: `Lesson 4 bridges theory and practice. How do you tackle exam questions testing **${title}** with speed and accuracy?\n\n### The 4-Step Exam Solution Protocol\n1. **Inspect**: Read the question prompt carefully and identify what specific concept is being tested.\n2. **Define**: State the relevant definition or rule (${d0.term} / ${d1.term}) before writing the response.\n3. **Apply**: Connect the specific details of the prompt to the governing principles.\n4. **Review**: Check for clarity, logical flow, and ensure all parts of the question have been addressed.\n\n### Common Exam Trap to Avoid\nNever rely on superficial keyword matching without verifying whether the meaning fits the specific context of the question.`,
-      analogy: "Like a professional editor proofreading a text: a systematic pass-by-pass review catches ambiguities before final submission.",
-      keyTerms: ["Problem Solving", "Exam Protocol", "Diagnostic Analysis"],
-      knowledgeCheck: create5QuestionsForLesson(4, "Problem Solving", title)[0],
-      questions: create5QuestionsForLesson(4, "Problem Solving", title),
-      completed: false,
-    },
-    {
-      lessonNumber: 5,
-      title: "Comparative Analysis & Real-World Case Studies",
-      subtitle: "Exploring practical implementations, field applications, and case studies",
-      content: `In Lesson 5, we examine how the principles of **${title}** are applied in professional, academic, and practical settings.\n\n### Real-World Case Studies\n• **Structured Analysis**: Applying ${d4.term} to evaluate complex case studies and problem sets.\n• **Contextual Adaptation**: Modifying strategies to meet different project, research, or organizational demands.\n• **Quality & Standards**: Using ${d2.term} as an objective benchmark for evaluation.\n\n### Comparative Insights\nCompare baseline approaches with advanced strategies to understand which methods yield the highest clarity, efficiency, and accuracy.`,
-      analogy: "Like an architect adapting blueprints to different terrains: the underlying engineering principles remain solid while the implementation flexes to fit the landscape.",
-      keyTerms: [d4.term, "Real-World Application", "Case Studies"],
-      knowledgeCheck: create5QuestionsForLesson(5, "Applications & Case Studies", title)[0],
-      questions: create5QuestionsForLesson(5, "Applications & Case Studies", title),
-      completed: false,
-    },
-    {
-      lessonNumber: 6,
-      title: "Synthesis & Comprehensive Mastery",
-      subtitle: "Connecting all core concepts into a unified mental framework",
-      content: `Congratulations on reaching Lesson 6 of **${title}**! Here, we synthesize all concepts:\n\n1. Foundational terminology and definitions\n2. Step-by-step methodologies and analytical frameworks\n3. Boundary rules and contextual nuances\n4. Diagnostic problem-solving protocols\n5. Practical applications and real-world case analysis\n\nConclude your study by passing the final 5 mastery questions below!`,
-      analogy: "Like assembling a puzzle: each individual piece now joins together into a clear, complete, and memorable picture.",
-      keyTerms: ["Synthesis", "Unified Model", "Mastery", "Exam Preparedness"],
-      knowledgeCheck: create5QuestionsForLesson(6, "Comprehensive Mastery", title)[0],
-      questions: create5QuestionsForLesson(6, "Comprehensive Mastery", title),
-      completed: false,
-    },
-  ];
+  // 5. Step Lesson (Split text into exactly 6 rich lessons with extracted notes and 5 questions each)
+  const stepLessons = splitDocumentInto6Lessons(rawContent, title, subject);
 
   const lesson: StepLesson = {
     id: `lesson-${materialId}`,
     materialId,
     subject,
     title: `Interactive Step-by-Step Lesson: ${title}`,
-    totalLessons: stepLessons.length,
+    totalLessons: 6,
     currentStepIndex: 0,
     isFinished: false,
     lessons: stepLessons,
@@ -1360,50 +1409,304 @@ export function generateFallbackStudyPackage(
   return { material, notes, flashcards, quiz, lesson };
 }
 
-// Auto-repair an existing lesson pack if it contains corrupt binary bytes or unformatted write-ups
-export function repairLessonPack(pack: StepLesson, rawTitle = "Study Material"): StepLesson {
-  const title = cleanTitle(rawTitle);
-  const subject = detectSubjectFromTitle(title);
-  const fallbackPkg = generateFallbackStudyPackage("mat-repair", title, "", subject, "upload");
+// Splits any uploaded document into 6 progressive lessons with extracted notes and 5 questions each
+export function splitDocumentInto6Lessons(
+  rawText: string,
+  title = "Study Material",
+  subject: StudySubject = "general"
+): LessonStep[] {
+  const clean = cleanToNaturalEnglish(rawText || "");
+  const paragraphs = clean
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 20 && !/^(\d+|page \d+|footer|header)$/i.test(p));
 
-  if (!pack || !pack.lessons || pack.lessons.length === 0) {
-    return fallbackPkg.lesson;
+  const allSentences = clean
+    .split(/(?<=[.?!])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25 && s.length < 350 && !isGarbledText(s));
+
+  const totalLessons = 6;
+  const lessons: LessonStep[] = [];
+
+  const defaultThemes = [
+    {
+      title: "Foundations & Core Principles",
+      subtitle: `Introduction, big-picture purpose, and foundational framework of ${title}`,
+      analogy: `Think of this foundation like building the structural steel frame of a skyscraper: once the frame is anchored, every subsequent floor and mechanism fits securely.`,
+    },
+    {
+      title: "Essential Concepts & Terminology",
+      subtitle: "Unpacking critical definitions, variables, and operational language",
+      analogy: "Like learning musical notes before playing a symphony: each symbol has a precise meaning that prevents ambiguity in complex scores.",
+    },
+    {
+      title: "Operational Mechanisms & Pathways",
+      subtitle: "Step-by-step causality, transformations, and interaction sequences",
+      analogy: "Imagine rolling a ball over a small hill (activation) so it can spontaneously roll down a great valley (energetic equilibrium).",
+    },
+    {
+      title: "Governing Rules, Formulas & Examples",
+      subtitle: "Quantifying relationships, conservation laws, and worked cases",
+      analogy: "Like car braking distances scaling with the square of velocity: governing rules dictate how outputs respond non-linearly to changing inputs.",
+    },
+    {
+      title: "Boundary Conditions & Diagnostic Traps",
+      subtitle: "Exam traps, edge cases, limiting bottlenecks, and stress tests",
+      analogy: "An airplane flies smoothly in calm weather, but pilots practice stall recoveries for turbulent boundary conditions.",
+    },
+    {
+      title: "Synthesis & Comprehensive Mastery",
+      subtitle: "Connecting all principles into an integrated exam-ready mental model",
+      analogy: "Like finishing a complex jigsaw puzzle: each individual mechanism snaps together into a complete, unforgettable picture.",
+    },
+  ];
+
+  for (let i = 0; i < totalLessons; i++) {
+    const lessonNum = i + 1;
+    const theme = defaultThemes[i];
+
+    // Extract slice of paragraphs for this lesson
+    let sliceParas: string[] = [];
+    if (paragraphs.length >= 6) {
+      const perLesson = Math.ceil(paragraphs.length / 6);
+      const start = i * perLesson;
+      sliceParas = paragraphs.slice(start, start + perLesson);
+    } else if (paragraphs.length > 0) {
+      const idx = i % paragraphs.length;
+      sliceParas = [paragraphs[idx]];
+    }
+
+    // Extract slice of sentences
+    let sliceSentences: string[] = [];
+    if (allSentences.length >= 6) {
+      const perLesson = Math.ceil(allSentences.length / 6);
+      const start = i * perLesson;
+      sliceSentences = allSentences.slice(start, start + perLesson);
+    } else {
+      sliceSentences = allSentences;
+    }
+
+    const sliceDefs: { term: string; definition: string }[] = [];
+    const slicePoints: string[] = [];
+
+    const textToScan = (sliceParas.join("\n\n") + " " + sliceSentences.join(" ")).trim();
+
+    // Check headings in slice
+    const headingMatch = textToScan.match(/^(?:#{1,4}\s+|chapter\s+\d+:?\s*|topic\s+\d+:?\s*|section\s+\d+:?\s*|\d+\.\s+)(.+)$/im);
+    const lessonTitle = headingMatch && headingMatch[1].trim().length > 3
+      ? headingMatch[1].trim().replace(/[*_#]/g, "")
+      : `${theme.title}`;
+
+    // Extract definitions from slice
+    const defMatches = textToScan.matchAll(/([A-Z][a-zA-Z0-9\s\-']{2,40})\s+(?:is defined as|refers to|is the process of|means|describes|is considered)\s+([^.\n]+)/gi);
+    for (const m of defMatches) {
+      if (sliceDefs.length < 3 && isAcademicTerm(m[1].trim())) {
+        sliceDefs.push({ term: m[1].trim(), definition: m[2].trim() });
+      }
+    }
+
+    const colonMatches = textToScan.matchAll(/([A-Z][a-zA-Z0-9\s\-']{2,40}):\s+([^.\n]{10,200})/g);
+    for (const m of colonMatches) {
+      if (sliceDefs.length < 3 && isAcademicTerm(m[1].trim())) {
+        sliceDefs.push({ term: m[1].trim(), definition: m[2].trim() });
+      }
+    }
+
+    // Extract high-yield causal and mechanism points
+    for (const s of sliceSentences) {
+      if (
+        /(?:because|leads to|results in|causes|triggers|requires|must be|essential|crucial|proportional|mechanism|governed by|functions to|principle|equation|threshold|equilibrium)/i.test(s) &&
+        slicePoints.length < 4
+      ) {
+        slicePoints.push(s);
+      }
+    }
+    if (slicePoints.length === 0 && sliceSentences.length > 0) {
+      slicePoints.push(sliceSentences[0]);
+      if (sliceSentences[1]) slicePoints.push(sliceSentences[1]);
+    }
+
+    // Compose authentic extracted study note from the uploaded file
+    let noteContent = "";
+    if (sliceParas.length > 0) {
+      noteContent = `### Section Overview\n${sliceParas.join("\n\n")}`;
+    } else if (sliceSentences.length > 0) {
+      noteContent = `### Section Overview\n${sliceSentences.slice(0, 3).join(" ")}`;
+    } else {
+      noteContent = `### Section Overview\nThis section establishes foundational understanding for ${title}. Focus on the core relationships, operational definitions, and how input variables determine system behavior.`;
+    }
+
+    if (slicePoints.length > 0) {
+      noteContent += `\n\n### Key Mechanisms & Extracted Rules\n` + slicePoints.map((p) => `• ${p}`).join("\n");
+    }
+
+    const keyTerms = sliceDefs.map((d) => d.term).concat(
+      sliceSentences.slice(0, 2).map((s) => s.split(" ")[0]).filter((w) => w && w.length > 3)
+    ).slice(0, 4);
+
+    if (keyTerms.length === 0) {
+      keyTerms.push("Foundational Principle", "Governing Rule", "Systemic Stability");
+    }
+
+    const keyTakeaway = slicePoints[0] || `Mastering this section enables accurate prediction of system behavior in ${title}.`;
+
+    const noteData = {
+      noteContent,
+      importantPoints: slicePoints,
+      definitions: sliceDefs,
+      keyTerms,
+    };
+
+    const questions = create5QuestionsForLesson(lessonNum, lessonTitle, title, noteData);
+
+    lessons.push({
+      lessonNumber: lessonNum,
+      title: lessonTitle,
+      subtitle: theme.subtitle,
+      content: noteContent,
+      sectionLabel: `Section ${lessonNum} of 6`,
+      importantPoints: slicePoints,
+      keyTakeaway,
+      analogy: theme.analogy,
+      keyTerms,
+      knowledgeCheck: questions[0],
+      questions,
+      completed: false,
+    });
   }
 
+  return lessons;
+}
+
+// Auto-repair an existing lesson pack to ensure exactly 6 lessons with extracted notes and 5 questions each
+export function repairLessonPack(
+  pack: StepLesson | null | undefined,
+  rawTitle = "Study Material",
+  rawContent = "",
+  subject?: StudySubject
+): StepLesson {
+  const title = cleanTitle(rawTitle);
+  const detectedSub = subject || detectSubjectFromTitle(title);
+
+  // If no pack or lessons count != 6 or lessons are corrupted
+  const needsFullRegen =
+    !pack ||
+    !pack.lessons ||
+    pack.lessons.length !== 6 ||
+    pack.lessons.some(
+      (l) =>
+        !l.content ||
+        isGarbledText(l.content) ||
+        !l.questions ||
+        l.questions.length < 5
+    );
+
+  if (needsFullRegen) {
+    const generatedLessons = splitDocumentInto6Lessons(rawContent, title, detectedSub);
+    return {
+      id: pack?.id || `lesson-${Date.now()}`,
+      materialId: pack?.materialId || "mat-repair",
+      subject: pack?.subject || detectedSub,
+      title: `Interactive Step-by-Step Lesson: ${title}`,
+      totalLessons: 6,
+      currentStepIndex: pack?.currentStepIndex || 0,
+      isFinished: false,
+      lessons: generatedLessons,
+    };
+  }
+
+  const cleanTextProse = (str: string): string => {
+    if (!str || typeof str !== "string") return str || "";
+    return str
+      .replace(/\bnoted in (?:any|the|this|that|each)?\s*pr?ar?ag?graphs?\b/gi, "in this section")
+      .replace(/\bnoted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "")
+      .replace(/\bas noted in pr?ar?ag?graphs?\s*\d+(?:\s*-\s*\d+)?\b/gi, "")
+      .replace(/\bas noted in (?:any|the|this)?\s*pr?ar?ag?graphs?\b/gi, "as covered in this section")
+      .replace(/\bnoted in\s+pr?ar?ag?graphs?\b/gi, "in this section")
+      .replace(/\bnoted in Section\s*\d+\b/gi, "")
+      .replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?\s*\d+(?:-\d+)?/gi, "regarding $1")
+      .replace(/regarding\s+("?[^"?]+"??)\s+noted in\s+pr?ar?ag?graphs?/gi, "regarding $1")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+\?/g, "?")
+      .trim();
+  };
+
+  const cleanQuestionObj = (q: any) => ({
+    ...q,
+    question: cleanTextProse(q.question),
+    options: (q.options || []).map(cleanTextProse),
+    hint: cleanTextProse(q.hint),
+    reinforcement: cleanTextProse(q.reinforcement),
+    struggleExplanation: cleanTextProse(q.struggleExplanation),
+  });
+
+  // Otherwise repair individual lessons in place
   const repairedLessons = pack.lessons.map((lesson, idx) => {
-    const isCorruptContent =
-      !lesson.content ||
-      isGarbledText(lesson.content) ||
-      (lesson.content.includes("> **") && lesson.content.includes("**:"));
+    const lessonNum = lesson.lessonNumber || idx + 1;
+    const isCorruptContent = !lesson.content || isGarbledText(lesson.content);
     const isCorruptTitle = !lesson.title || isGarbledText(lesson.title);
     const isCorruptSubtitle = isGarbledText(lesson.subtitle || "");
-    const needsQuestions = !lesson.questions || lesson.questions.length < 5 || isGarbledText(lesson.questions[0]?.question || "");
+    const needsQuestions =
+      !lesson.questions ||
+      lesson.questions.length < 5 ||
+      isGarbledText(lesson.questions[0]?.question || "");
 
-    const freshLesson = fallbackPkg.lesson.lessons[idx] || fallbackPkg.lesson.lessons[0];
+    let resolvedLesson: any;
 
     if (!isCorruptContent && !isCorruptTitle && !isCorruptSubtitle && !needsQuestions) {
-      return lesson;
+      resolvedLesson = {
+        ...lesson,
+        lessonNumber: lessonNum,
+        questions: lesson.questions?.slice(0, 5),
+      };
+    } else {
+      const fallbackLessons = splitDocumentInto6Lessons(rawContent, title, detectedSub);
+      const fresh = fallbackLessons[idx] || fallbackLessons[0];
+
+      resolvedLesson = {
+        ...lesson,
+        lessonNumber: lessonNum,
+        title: isCorruptTitle ? fresh.title : lesson.title,
+        subtitle: isCorruptSubtitle ? fresh.subtitle : lesson.subtitle,
+        content: isCorruptContent ? fresh.content : lesson.content,
+        importantPoints: lesson.importantPoints || fresh.importantPoints,
+        keyTakeaway: lesson.keyTakeaway || fresh.keyTakeaway,
+        analogy: isGarbledText(lesson.analogy || "") ? fresh.analogy : lesson.analogy,
+        keyTerms:
+          lesson.keyTerms && lesson.keyTerms.length > 0 && !isGarbledText(lesson.keyTerms.join(" "))
+            ? lesson.keyTerms
+            : fresh.keyTerms,
+        questions: needsQuestions
+          ? create5QuestionsForLesson(lessonNum, fresh.title, title, {
+              noteContent: fresh.content,
+              importantPoints: fresh.importantPoints,
+              definitions: [],
+              keyTerms: fresh.keyTerms,
+            })
+          : lesson.questions.slice(0, 5),
+      };
     }
 
     return {
-      ...lesson,
-      title: isCorruptTitle ? freshLesson.title : lesson.title,
-      subtitle: isCorruptSubtitle ? freshLesson.subtitle : lesson.subtitle,
-      content: isCorruptContent ? freshLesson.content : lesson.content,
-      analogy: isGarbledText(lesson.analogy || "") ? freshLesson.analogy : lesson.analogy,
-      keyTerms:
-        lesson.keyTerms && lesson.keyTerms.length > 0 && !isGarbledText(lesson.keyTerms.join(" "))
-          ? lesson.keyTerms
-          : freshLesson.keyTerms,
-      questions: needsQuestions ? create5QuestionsForLesson(idx + 1, freshLesson.title, title) : lesson.questions,
+      ...resolvedLesson,
+      title: cleanTextProse(resolvedLesson.title),
+      subtitle: cleanTextProse(resolvedLesson.subtitle),
+      content: cleanTextProse(resolvedLesson.content),
+      importantPoints: (resolvedLesson.importantPoints || []).map(cleanTextProse),
+      keyTakeaway: cleanTextProse(resolvedLesson.keyTakeaway),
+      analogy: cleanTextProse(resolvedLesson.analogy),
+      knowledgeCheck: resolvedLesson.knowledgeCheck ? cleanQuestionObj(resolvedLesson.knowledgeCheck) : undefined,
+      questions: (resolvedLesson.questions || []).map(cleanQuestionObj),
     };
   });
 
   return {
     ...pack,
     title: `Interactive Step-by-Step Lesson: ${title}`,
-    subject: pack.subject || subject,
-    lessons: repairedLessons,
+    subject: pack.subject || detectedSub,
+    totalLessons: 6,
+    lessons: repairedLessons.slice(0, 6),
   };
 }
 
