@@ -209,9 +209,39 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const saved = localStorage.getItem("studymate_materials");
       if (saved) {
+        // If localStorage contains legacy test items from previous runs, clean them out
+        if (
+          saved.includes("GST102") ||
+          saved.includes("MCB 203") ||
+          saved.includes("GST 102") ||
+          saved.includes("MCB203") ||
+          saved.includes("ASEPTIC") ||
+          saved.includes("Chapters 5")
+        ) {
+          localStorage.removeItem("studymate_materials");
+          localStorage.removeItem("studymate_notes");
+          localStorage.removeItem("studymate_memorise");
+          localStorage.removeItem("studymate_quizzes");
+          localStorage.removeItem("studymate_lessons");
+          return initialMaterials;
+        }
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((m: StudyMaterial) => sanitizeMaterial(m));
+          const valid = parsed
+            .filter((m: any) => {
+              if (!m || !m.id || !m.title) return false;
+              const t = (m.title + " " + (m.courseCode || "")).toUpperCase();
+              return (
+                !t.includes("GST102") &&
+                !t.includes("MCB 203") &&
+                !t.includes("GST 102") &&
+                !t.includes("MCB203") &&
+                !t.includes("ASEPTIC") &&
+                !t.includes("CHAPTERS 5")
+              );
+            })
+            .map((m: StudyMaterial) => sanitizeMaterial(m));
+          return valid;
         }
       }
       return initialMaterials;
@@ -409,7 +439,21 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (isMounted && json.success && json.data) {
           const d = json.data;
           if (Array.isArray(d.materials)) {
-            setMaterials(d.materials.map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) })));
+            const valid = d.materials
+              .filter((m: any) => {
+                if (!m || !m.id || !m.title) return false;
+                const t = (m.title + " " + (m.courseCode || "")).toUpperCase();
+                return (
+                  !t.includes("GST102") &&
+                  !t.includes("MCB 203") &&
+                  !t.includes("GST 102") &&
+                  !t.includes("MCB203") &&
+                  !t.includes("ASEPTIC") &&
+                  !t.includes("CHAPTERS 5")
+                );
+              })
+              .map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
+            setMaterials(valid);
           }
           if (d.notes) setNotes(d.notes);
           if (d.memorisePacks) setMemorisePacks(d.memorisePacks);
