@@ -133,6 +133,7 @@ export async function saveMaterialToDatabase(material) {
   try {
     const payload = {
       id: material.id,
+      user_id: material.userId || material.user_id || null,
       title: material.title,
       subject: material.subject,
       source_type: material.sourceType,
@@ -598,6 +599,7 @@ export async function fetchFullStudyDataFromSupabase() {
 
     const materials = rawMaterials.map((row) => ({
       id: row.id,
+      userId: row.user_id || null,
       title: row.title,
       subject: row.subject,
       sourceType: row.source_type,
@@ -810,6 +812,7 @@ export async function fetchMaterialsFromSupabase() {
     // Map database snake_case columns back to StudyMaterial camelCase
     const formatted = (data || []).map((row) => ({
       id: row.id,
+      userId: row.user_id || null,
       title: row.title,
       subject: row.subject,
       sourceType: row.source_type,
