@@ -575,11 +575,18 @@ export const AddMaterialModal: React.FC = () => {
     } catch (err) {
       console.warn("Using local study transformation fallback:", err);
     } finally {
-      // 4. Database Insertion: Await inserting records into study_materials, generated_notes, flashcards, quizzes, lessons BEFORE navigating
+      // 4. Database Insertion: Await inserting parent record into study_materials FIRST, then insert children
       console.log(`[Supabase DB] Awaiting persistence for material "${finalTitle}"...`);
       try {
-        const [dbMatRes, dbNotesRes, dbFlashRes, dbQuizRes, dbLessonRes, dbPackRes] = await Promise.all([
-          saveMaterialToDatabase(resolvedMaterial),
+        // Step 1: Save parent material and await completion to guarantee it exists in study_materials table
+        const dbMatRes = await saveMaterialToDatabase(resolvedMaterial);
+
+        if (isSupabaseConfigured() && dbMatRes && !dbMatRes.success && dbMatRes.error) {
+          console.warn("[Supabase DB Notice] Material table insertion warning:", dbMatRes.error);
+        }
+
+        // Step 2: Now that parent row exists, save child tables (notes, flashcards, quizzes, lessons)
+        const [dbNotesRes, dbFlashRes, dbQuizRes, dbLessonRes, dbPackRes] = await Promise.all([
           saveNotesToDatabase(newMaterialId, resolvedNotes),
           saveFlashcardsToDatabase(newMaterialId, resolvedFlashcards.flashcards),
           saveQuizToDatabase(newMaterialId, resolvedQuiz),
@@ -588,18 +595,15 @@ export const AddMaterialModal: React.FC = () => {
         ]);
 
         if (isSupabaseConfigured()) {
-          if (dbMatRes && !dbMatRes.success && dbMatRes.error) {
-            console.warn("[Supabase DB Notice] Material table insertion error:", dbMatRes.error);
-          }
           if (dbNotesRes && !dbNotesRes.success && dbNotesRes.error) {
-            console.warn("[Supabase DB Notice] Notes table insertion error:", dbNotesRes.error);
+            console.warn("[Supabase DB Notice] Notes table insertion note:", dbNotesRes.error);
           }
           if (dbQuizRes && !dbQuizRes.success && dbQuizRes.error) {
-            console.warn("[Supabase DB Notice] Quiz table insertion error:", dbQuizRes.error);
+            console.warn("[Supabase DB Notice] Quiz table insertion note:", dbQuizRes.error);
           }
         }
       } catch (dbErr: any) {
-        console.warn("[Supabase DB] Exception during database insertion:", dbErr);
+        console.warn("[Supabase DB] Handled exception during database insertion:", dbErr);
       }
 
       console.log(`[ACTIVE MATERIAL]`, {

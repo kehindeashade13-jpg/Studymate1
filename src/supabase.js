@@ -211,11 +211,34 @@ export async function saveMaterialToDatabase(material) {
  * Saves structured notes to Supabase Database table 'generated_notes'.
  */
 export async function saveNotesToDatabase(materialId, notes) {
-  if (!isSupabaseConfigured() || !notes) {
+  if (!isSupabaseConfigured() || !notes || !materialId) {
     return { success: true, isLocalFallback: true };
   }
 
   try {
+    // 1. Ensure parent material row exists in 'study_materials' to avoid FK error 23503
+    const { data: parentMat } = await supabase
+      .from("study_materials")
+      .select("id")
+      .eq("id", materialId)
+      .maybeSingle();
+
+    if (!parentMat) {
+      console.warn(`[Supabase DB] Parent material "${materialId}" not found in study_materials. Inserting parent stub first...`);
+      await supabase
+        .from("study_materials")
+        .upsert(
+          {
+            id: materialId,
+            title: notes.topicTitle || "Study Material",
+            subject: notes.subject || "General",
+            source_type: "upload",
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+    }
+
     const payload = {
       id: notes.id || `notes-${materialId}`,
       material_id: materialId,
@@ -238,34 +261,13 @@ export async function saveNotesToDatabase(materialId, notes) {
       .select();
 
     if (error) {
-      console.error("[Supabase DB] saveNotes error:", error);
-      try {
-        if (typeof window !== "undefined" && typeof window.alert === "function") {
-          window.alert(
-            "🚨 [Supabase Error in saveNotesToDatabase]\n\n" +
-              JSON.stringify(
-                {
-                  message: error.message,
-                  code: error.code,
-                  details: error.details,
-                  hint: error.hint,
-                  table: "generated_notes",
-                  materialId,
-                },
-                null,
-                2
-              )
-          );
-        }
-      } catch (alertErr) {
-        console.warn("Could not display screen alert:", alertErr);
-      }
-      return { success: false, error: error.message };
+      console.warn("[Supabase DB] saveNotes error (handled gracefully):", error.message);
+      return { success: false, error: error.message, isLocalFallback: true };
     }
     return { success: true, data };
   } catch (err) {
-    console.error("[Supabase DB] saveNotes exception:", err);
-    return { success: true, isLocalFallback: true };
+    console.warn("[Supabase DB] saveNotes exception (handled gracefully):", err?.message || err);
+    return { success: true, isLocalFallback: true, error: err?.message };
   }
 }
 
@@ -273,11 +275,33 @@ export async function saveNotesToDatabase(materialId, notes) {
  * Saves flashcards to Supabase Database table 'flashcards'.
  */
 export async function saveFlashcardsToDatabase(materialId, flashcards) {
-  if (!isSupabaseConfigured() || !flashcards || !flashcards.length) {
+  if (!isSupabaseConfigured() || !flashcards || !flashcards.length || !materialId) {
     return { success: true, isLocalFallback: true };
   }
 
   try {
+    // Ensure parent material row exists in 'study_materials' to avoid FK error 23503
+    const { data: parentMat } = await supabase
+      .from("study_materials")
+      .select("id")
+      .eq("id", materialId)
+      .maybeSingle();
+
+    if (!parentMat) {
+      await supabase
+        .from("study_materials")
+        .upsert(
+          {
+            id: materialId,
+            title: "Study Material",
+            subject: "General",
+            source_type: "upload",
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+    }
+
     const rows = flashcards.map((fc, idx) => ({
       id: fc.id || `fc-${materialId}-${idx}`,
       material_id: materialId,
@@ -297,33 +321,12 @@ export async function saveFlashcardsToDatabase(materialId, flashcards) {
       .select();
 
     if (error) {
-      console.error("[Supabase DB] saveFlashcards error:", error);
-      try {
-        if (typeof window !== "undefined" && typeof window.alert === "function") {
-          window.alert(
-            "🚨 [Supabase Error in saveFlashcardsToDatabase]\n\n" +
-              JSON.stringify(
-                {
-                  message: error.message,
-                  code: error.code,
-                  details: error.details,
-                  hint: error.hint,
-                  table: "flashcards",
-                  materialId,
-                },
-                null,
-                2
-              )
-          );
-        }
-      } catch (alertErr) {
-        console.warn("Could not display screen alert:", alertErr);
-      }
-      return { success: false, error: error.message };
+      console.warn("[Supabase DB] saveFlashcards error (handled gracefully):", error.message);
+      return { success: false, error: error.message, isLocalFallback: true };
     }
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveFlashcards exception:", err);
+    console.warn("[Supabase DB] saveFlashcards exception (handled gracefully):", err?.message || err);
     return { success: true, isLocalFallback: true };
   }
 }
@@ -332,10 +335,31 @@ export async function saveFlashcardsToDatabase(materialId, flashcards) {
  * Saves quiz to Supabase Database table 'quizzes'.
  */
 export async function saveQuizToDatabase(materialId, quiz) {
-  if (!isSupabaseConfigured() || !quiz) {
+  if (!isSupabaseConfigured() || !quiz || !materialId) {
     return { success: true, isLocalFallback: true };
   }
   try {
+    const { data: parentMat } = await supabase
+      .from("study_materials")
+      .select("id")
+      .eq("id", materialId)
+      .maybeSingle();
+
+    if (!parentMat) {
+      await supabase
+        .from("study_materials")
+        .upsert(
+          {
+            id: materialId,
+            title: quiz.quizTitle || "Study Material",
+            subject: quiz.subject || "General",
+            source_type: "upload",
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+    }
+
     const payload = {
       id: quiz.id || `quiz-${materialId}`,
       material_id: materialId,
@@ -351,12 +375,12 @@ export async function saveQuizToDatabase(materialId, quiz) {
       .upsert(payload, { onConflict: "id" })
       .select();
     if (error) {
-      console.warn("[Supabase DB] saveQuiz error:", error.message);
-      return { success: false, error: error.message };
+      console.warn("[Supabase DB] saveQuiz error (handled gracefully):", error.message);
+      return { success: false, error: error.message, isLocalFallback: true };
     }
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveQuiz exception:", err);
+    console.warn("[Supabase DB] saveQuiz exception (handled gracefully):", err?.message || err);
     return { success: true, isLocalFallback: true };
   }
 }
@@ -365,10 +389,31 @@ export async function saveQuizToDatabase(materialId, quiz) {
  * Saves step-by-step interactive lesson to Supabase Database table 'step_lessons'.
  */
 export async function saveLessonToDatabase(materialId, lesson) {
-  if (!isSupabaseConfigured() || !lesson) {
+  if (!isSupabaseConfigured() || !lesson || !materialId) {
     return { success: true, isLocalFallback: true };
   }
   try {
+    const { data: parentMat } = await supabase
+      .from("study_materials")
+      .select("id")
+      .eq("id", materialId)
+      .maybeSingle();
+
+    if (!parentMat) {
+      await supabase
+        .from("study_materials")
+        .upsert(
+          {
+            id: materialId,
+            title: lesson.title || "Study Material",
+            subject: lesson.subject || "General",
+            source_type: "upload",
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+    }
+
     const payload = {
       id: lesson.id || `lesson-${materialId}`,
       material_id: materialId,
@@ -385,12 +430,12 @@ export async function saveLessonToDatabase(materialId, lesson) {
       .upsert(payload, { onConflict: "id" })
       .select();
     if (error) {
-      console.warn("[Supabase DB] saveLesson error:", error.message);
-      return { success: false, error: error.message };
+      console.warn("[Supabase DB] saveLesson error (handled gracefully):", error.message);
+      return { success: false, error: error.message, isLocalFallback: true };
     }
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveLesson exception:", err);
+    console.warn("[Supabase DB] saveLesson exception (handled gracefully):", err?.message || err);
     return { success: true, isLocalFallback: true };
   }
 }
@@ -399,10 +444,31 @@ export async function saveLessonToDatabase(materialId, lesson) {
  * Saves full memorise pack (flashcards, mnemonics, fill in the blanks) to Supabase Database table 'memorise_packs'.
  */
 export async function saveMemorisePackToDatabase(materialId, memorisePack) {
-  if (!isSupabaseConfigured() || !memorisePack) {
+  if (!isSupabaseConfigured() || !memorisePack || !materialId) {
     return { success: true, isLocalFallback: true };
   }
   try {
+    const { data: parentMat } = await supabase
+      .from("study_materials")
+      .select("id")
+      .eq("id", materialId)
+      .maybeSingle();
+
+    if (!parentMat) {
+      await supabase
+        .from("study_materials")
+        .upsert(
+          {
+            id: materialId,
+            title: memorisePack.title || "Study Material",
+            subject: memorisePack.subject || "General",
+            source_type: "upload",
+            created_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+    }
+
     const payload = {
       id: memorisePack.id || `pack-${materialId}`,
       material_id: materialId,
@@ -421,12 +487,12 @@ export async function saveMemorisePackToDatabase(materialId, memorisePack) {
       .upsert(payload, { onConflict: "id" })
       .select();
     if (error) {
-      console.warn("[Supabase DB] saveMemorisePack error:", error.message);
-      return { success: false, error: error.message };
+      console.warn("[Supabase DB] saveMemorisePack error (handled gracefully):", error.message);
+      return { success: false, error: error.message, isLocalFallback: true };
     }
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveMemorisePack exception:", err);
+    console.warn("[Supabase DB] saveMemorisePack exception (handled gracefully):", err?.message || err);
     return { success: true, isLocalFallback: true };
   }
 }
