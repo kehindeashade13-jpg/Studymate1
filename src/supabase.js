@@ -1,14 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Safe Vite / Vercel Environment Variable access
+// Standard Vite Environment Variable access
 export const SUPABASE_URL =
-  (typeof import.meta !== "undefined" && import.meta.env && (import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL)) ||
-  (typeof process !== "undefined" && process.env && (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)) ||
+  import.meta.env.VITE_SUPABASE_URL ||
+  (typeof process !== "undefined" && (process.env?.VITE_SUPABASE_URL || process.env?.SUPABASE_URL || process.env?.NEXT_PUBLIC_SUPABASE_URL)) ||
   "";
 
 export const SUPABASE_ANON_KEY =
-  (typeof import.meta !== "undefined" && import.meta.env && (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_KEY)) ||
-  (typeof process !== "undefined" && process.env && (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_KEY)) ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  (typeof process !== "undefined" && (process.env?.VITE_SUPABASE_ANON_KEY || process.env?.SUPABASE_ANON_KEY || process.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env?.SUPABASE_KEY)) ||
   "";
 
 export const isSupabaseConfigured = () => {
@@ -157,13 +157,51 @@ export async function saveMaterialToDatabase(material) {
       .select();
 
     if (error) {
-      console.warn("[Supabase DB] saveMaterial error:", error.message);
+      console.error("[Supabase DB] saveMaterialToDatabase error:", error);
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(
+            "🚨 [Supabase Error in saveMaterialToDatabase]\n\n" +
+              JSON.stringify(
+                {
+                  message: error.message,
+                  code: error.code,
+                  details: error.details,
+                  hint: error.hint,
+                  table: "study_materials",
+                  payloadId: material.id,
+                },
+                null,
+                2
+              )
+          );
+        }
+      } catch (alertErr) {
+        console.warn("Could not display screen alert:", alertErr);
+      }
       return { success: false, error: error.message, isLocalFallback: true };
     }
 
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveMaterial exception:", err);
+    console.error("[Supabase DB] saveMaterialToDatabase exception:", err);
+    try {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(
+          "🚨 [Supabase Exception in saveMaterialToDatabase]\n\n" +
+            JSON.stringify(
+              {
+                message: err?.message || String(err),
+                table: "study_materials",
+              },
+              null,
+              2
+            )
+        );
+      }
+    } catch (alertErr) {
+      console.warn("Could not display screen alert:", alertErr);
+    }
     return { success: true, isLocalFallback: true, error: err?.message };
   }
 }
@@ -199,12 +237,33 @@ export async function saveNotesToDatabase(materialId, notes) {
       .select();
 
     if (error) {
-      console.warn("[Supabase DB] saveNotes error:", error.message);
+      console.error("[Supabase DB] saveNotes error:", error);
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(
+            "🚨 [Supabase Error in saveNotesToDatabase]\n\n" +
+              JSON.stringify(
+                {
+                  message: error.message,
+                  code: error.code,
+                  details: error.details,
+                  hint: error.hint,
+                  table: "generated_notes",
+                  materialId,
+                },
+                null,
+                2
+              )
+          );
+        }
+      } catch (alertErr) {
+        console.warn("Could not display screen alert:", alertErr);
+      }
       return { success: false, error: error.message };
     }
     return { success: true, data };
   } catch (err) {
-    console.warn("[Supabase DB] saveNotes exception:", err);
+    console.error("[Supabase DB] saveNotes exception:", err);
     return { success: true, isLocalFallback: true };
   }
 }
@@ -237,7 +296,28 @@ export async function saveFlashcardsToDatabase(materialId, flashcards) {
       .select();
 
     if (error) {
-      console.warn("[Supabase DB] saveFlashcards error:", error.message);
+      console.error("[Supabase DB] saveFlashcards error:", error);
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(
+            "🚨 [Supabase Error in saveFlashcardsToDatabase]\n\n" +
+              JSON.stringify(
+                {
+                  message: error.message,
+                  code: error.code,
+                  details: error.details,
+                  hint: error.hint,
+                  table: "flashcards",
+                  materialId,
+                },
+                null,
+                2
+              )
+          );
+        }
+      } catch (alertErr) {
+        console.warn("Could not display screen alert:", alertErr);
+      }
       return { success: false, error: error.message };
     }
     return { success: true, data };
@@ -476,7 +556,28 @@ export async function fetchFullStudyDataFromSupabase() {
     ]);
 
     if (materialsRes.error) {
-      console.warn("[Supabase DB] fetchFullStudyData materials error:", materialsRes.error.message);
+      console.error("[Supabase DB] fetchFullStudyData materials error:", materialsRes.error);
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(
+            "🚨 [Supabase Error in fetchFullStudyDataFromSupabase / useEffect]\n\n" +
+              JSON.stringify(
+                {
+                  message: materialsRes.error.message,
+                  code: materialsRes.error.code,
+                  details: materialsRes.error.details,
+                  hint: materialsRes.error.hint,
+                  table: "study_materials",
+                  operation: "SELECT (Initial Load / useEffect)",
+                },
+                null,
+                2
+              )
+          );
+        }
+      } catch (alertErr) {
+        console.warn("Could not display screen alert:", alertErr);
+      }
       return { success: false, error: materialsRes.error.message, data: null };
     }
 
@@ -644,7 +745,25 @@ export async function fetchFullStudyDataFromSupabase() {
       },
     };
   } catch (err) {
-    console.warn("[Supabase DB] fetchFullStudyData exception:", err);
+    console.error("[Supabase DB] fetchFullStudyData exception:", err);
+    try {
+      if (typeof window !== "undefined" && typeof window.alert === "function") {
+        window.alert(
+          "🚨 [Supabase Exception in fetchFullStudyDataFromSupabase / useEffect]\n\n" +
+            JSON.stringify(
+              {
+                message: err?.message || String(err),
+                table: "study_materials",
+                operation: "SELECT (Initial Load / useEffect)",
+              },
+              null,
+              2
+            )
+        );
+      }
+    } catch (alertErr) {
+      console.warn("Could not display screen alert:", alertErr);
+    }
     return { success: false, error: err?.message, data: null };
   }
 }
@@ -664,7 +783,27 @@ export async function fetchMaterialsFromSupabase() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.warn("[Supabase DB] fetchMaterials error:", error.message);
+      console.error("[Supabase DB] fetchMaterials error:", error);
+      try {
+        if (typeof window !== "undefined" && typeof window.alert === "function") {
+          window.alert(
+            "🚨 [Supabase Error in fetchMaterialsFromSupabase]\n\n" +
+              JSON.stringify(
+                {
+                  message: error.message,
+                  code: error.code,
+                  details: error.details,
+                  hint: error.hint,
+                  table: "study_materials",
+                },
+                null,
+                2
+              )
+          );
+        }
+      } catch (alertErr) {
+        console.warn("Could not display screen alert:", alertErr);
+      }
       return { success: false, error: error.message, data: [] };
     }
 
