@@ -32,13 +32,24 @@ export function saveMaterialToDatabase(material: StudyMaterial): Promise<{
   isLocalFallback?: boolean;
   data?: any;
   error?: string;
+  materialId?: string;
 }>;
 
-export function saveNotesToDatabase(materialId: string, notes: StudyNotes): Promise<{
+export function saveNotesToDatabase(
+  materialId: string,
+  notes: StudyNotes,
+  extra?: {
+    flashcards?: Flashcard[];
+    quiz?: Quiz;
+    memorisePack?: MemorisePack;
+    lesson?: StepLesson;
+  }
+): Promise<{
   success: boolean;
   isLocalFallback?: boolean;
   data?: any;
   error?: string;
+  materialId?: string;
 }>;
 
 export function saveFlashcardsToDatabase(materialId: string, flashcards: Flashcard[]): Promise<{

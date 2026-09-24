@@ -30,6 +30,7 @@ import {
   saveQuizToDatabase,
   saveLessonToDatabase,
   saveMemorisePackToDatabase,
+  saveFullStudyPackageToSupabase,
 } from "../supabase";
 import {
   initialUser,
@@ -1454,3 +1455,12 @@ export const useStudy = () => {
   }
   return context;
 };
+
+// Re-export sequential Supabase persistence handlers for direct access
+export {
+  saveMaterialToDatabase,
+  saveNotesToDatabase,
+  saveFullStudyPackageToSupabase,
+  fetchFullStudyDataFromSupabase,
+};
+

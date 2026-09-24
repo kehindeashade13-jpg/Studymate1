@@ -578,29 +578,30 @@ export const AddMaterialModal: React.FC = () => {
       // 4. Database Insertion: Await inserting parent record into study_materials FIRST, then insert children
       console.log(`[Supabase DB] Awaiting persistence for material "${finalTitle}"...`);
       try {
-        // Step 1: Save parent material and await completion to guarantee it exists in study_materials table
+        // Step 1: Save parent material using .upsert() and completely await the response
         const dbMatRes = await saveMaterialToDatabase(resolvedMaterial);
 
-        if (isSupabaseConfigured() && dbMatRes && !dbMatRes.success && dbMatRes.error) {
-          console.warn("[Supabase DB Notice] Material table insertion warning:", dbMatRes.error);
-        }
+        // Step 2: Only after study_materials completes successfully (error is null/falsy), save child records
+        const confirmedId = (dbMatRes && dbMatRes.materialId) || newMaterialId;
+        if (dbMatRes && !dbMatRes.error) {
+          const [dbNotesRes, dbFlashRes, dbQuizRes, dbLessonRes, dbPackRes] = await Promise.all([
+            saveNotesToDatabase(confirmedId, resolvedNotes),
+            saveFlashcardsToDatabase(confirmedId, resolvedFlashcards.flashcards),
+            saveQuizToDatabase(confirmedId, resolvedQuiz),
+            saveLessonToDatabase(confirmedId, resolvedLesson),
+            saveMemorisePackToDatabase(confirmedId, resolvedFlashcards),
+          ]);
 
-        // Step 2: Now that parent row exists, save child tables (notes, flashcards, quizzes, lessons)
-        const [dbNotesRes, dbFlashRes, dbQuizRes, dbLessonRes, dbPackRes] = await Promise.all([
-          saveNotesToDatabase(newMaterialId, resolvedNotes),
-          saveFlashcardsToDatabase(newMaterialId, resolvedFlashcards.flashcards),
-          saveQuizToDatabase(newMaterialId, resolvedQuiz),
-          saveLessonToDatabase(newMaterialId, resolvedLesson),
-          saveMemorisePackToDatabase(newMaterialId, resolvedFlashcards),
-        ]);
-
-        if (isSupabaseConfigured()) {
-          if (dbNotesRes && !dbNotesRes.success && dbNotesRes.error) {
-            console.warn("[Supabase DB Notice] Notes table insertion note:", dbNotesRes.error);
+          if (isSupabaseConfigured()) {
+            if (dbNotesRes && !dbNotesRes.success && dbNotesRes.error) {
+              console.warn("[Supabase DB Notice] Notes table insertion note:", dbNotesRes.error);
+            }
+            if (dbQuizRes && !dbQuizRes.success && dbQuizRes.error) {
+              console.warn("[Supabase DB Notice] Quiz table insertion note:", dbQuizRes.error);
+            }
           }
-          if (dbQuizRes && !dbQuizRes.success && dbQuizRes.error) {
-            console.warn("[Supabase DB Notice] Quiz table insertion note:", dbQuizRes.error);
-          }
+        } else {
+          console.warn("[Supabase DB] Material save reported error, skipping direct child inserts:", dbMatRes?.error);
         }
       } catch (dbErr: any) {
         console.warn("[Supabase DB] Handled exception during database insertion:", dbErr);

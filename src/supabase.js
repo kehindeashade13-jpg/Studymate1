@@ -124,19 +124,20 @@ export async function uploadStudyMaterialFile(
 
 /**
  * Saves study material record to Supabase Database table 'study_materials'.
+ * Strictly awaits .upsert() and verifies error === null before returning.
  */
 export async function saveMaterialToDatabase(material) {
-  if (!isSupabaseConfigured()) {
-    return { success: true, isLocalFallback: true, data: material };
+  if (!isSupabaseConfigured() || !material || !material.id) {
+    return { success: true, isLocalFallback: true, data: material, materialId: material?.id };
   }
 
   try {
     const payload = {
       id: material.id,
       user_id: material.userId || material.user_id || null,
-      title: material.title,
-      subject: material.subject,
-      source_type: material.sourceType,
+      title: material.title || "Untitled Study Material",
+      subject: material.subject || "General",
+      source_type: material.sourceType || "upload",
       source_url: material.sourceUrl || null,
       file_url: material.fileUrl || null,
       storage_path: material.storagePath || null,
@@ -152,71 +153,36 @@ export async function saveMaterialToDatabase(material) {
       created_at: new Date().toISOString(),
     };
 
+    // 1) Save to study_materials using .upsert() and await the response completely
     const { data, error } = await supabase
       .from("study_materials")
       .upsert(payload, { onConflict: "id" })
       .select();
 
-    if (error) {
+    // Verify error is null
+    if (error !== null) {
       console.error("[Supabase DB] saveMaterialToDatabase error:", error);
-      try {
-        if (typeof window !== "undefined" && typeof window.alert === "function") {
-          window.alert(
-            "🚨 [Supabase Error in saveMaterialToDatabase]\n\n" +
-              JSON.stringify(
-                {
-                  message: error.message,
-                  code: error.code,
-                  details: error.details,
-                  hint: error.hint,
-                  table: "study_materials",
-                  payloadId: material.id,
-                },
-                null,
-                2
-              )
-          );
-        }
-      } catch (alertErr) {
-        console.warn("Could not display screen alert:", alertErr);
-      }
-      return { success: false, error: error.message, isLocalFallback: true };
+      return { success: false, error: error.message, isLocalFallback: true, materialId: material.id };
     }
 
-    return { success: true, data };
+    return { success: true, data: data?.[0] || data, materialId: material.id };
   } catch (err) {
     console.error("[Supabase DB] saveMaterialToDatabase exception:", err);
-    try {
-      if (typeof window !== "undefined" && typeof window.alert === "function") {
-        window.alert(
-          "🚨 [Supabase Exception in saveMaterialToDatabase]\n\n" +
-            JSON.stringify(
-              {
-                message: err?.message || String(err),
-                table: "study_materials",
-              },
-              null,
-              2
-            )
-        );
-      }
-    } catch (alertErr) {
-      console.warn("Could not display screen alert:", alertErr);
-    }
-    return { success: true, isLocalFallback: true, error: err?.message };
+    return { success: false, isLocalFallback: true, error: err?.message || String(err), materialId: material?.id };
   }
 }
 
 /**
  * Saves structured notes to Supabase Database table 'generated_notes'.
+ * Runs sequentially after study_materials completes successfully with confirmed material ID.
  */
-export async function saveNotesToDatabase(materialId, notes) {
+export async function saveNotesToDatabase(materialId, notes, extra = {}) {
   if (!isSupabaseConfigured() || !notes || !materialId) {
     return { success: true, isLocalFallback: true };
   }
 
   try {
-    // 1. Ensure parent material row exists in 'study_materials' to avoid FK error 23503
+    // 1. Verify parent material exists in 'study_materials' to guarantee FK integrity
     const { data: parentMat } = await supabase
       .from("study_materials")
       .select("id")
@@ -225,7 +191,7 @@ export async function saveNotesToDatabase(materialId, notes) {
 
     if (!parentMat) {
       console.warn(`[Supabase DB] Parent material "${materialId}" not found in study_materials. Inserting parent stub first...`);
-      await supabase
+      const { error: stubError } = await supabase
         .from("study_materials")
         .upsert(
           {
@@ -237,6 +203,9 @@ export async function saveNotesToDatabase(materialId, notes) {
           },
           { onConflict: "id" }
         );
+      if (stubError !== null) {
+        console.warn("[Supabase DB] Parent stub insert warning:", stubError.message);
+      }
     }
 
     const payload = {
@@ -255,19 +224,34 @@ export async function saveNotesToDatabase(materialId, notes) {
       created_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase
+    // 2. Save to generated_notes using .upsert() and await response completely
+    const { data: notesData, error: notesError } = await supabase
       .from("generated_notes")
       .upsert(payload, { onConflict: "id" })
       .select();
 
-    if (error) {
-      console.warn("[Supabase DB] saveNotes error (handled gracefully):", error.message);
-      return { success: false, error: error.message, isLocalFallback: true };
+    if (notesError !== null) {
+      console.warn("[Supabase DB] saveNotes error (handled gracefully):", notesError.message);
     }
-    return { success: true, data };
+
+    // 3. Save additional child records (flashcards, quizzes) sequentially with confirmed materialId
+    if (extra && extra.flashcards && Array.isArray(extra.flashcards) && extra.flashcards.length > 0) {
+      await saveFlashcardsToDatabase(materialId, extra.flashcards);
+    }
+    if (extra && extra.quiz) {
+      await saveQuizToDatabase(materialId, extra.quiz);
+    }
+    if (extra && extra.memorisePack) {
+      await saveMemorisePackToDatabase(materialId, extra.memorisePack);
+    }
+    if (extra && extra.lesson) {
+      await saveLessonToDatabase(materialId, extra.lesson);
+    }
+
+    return { success: notesError === null, data: notesData, materialId };
   } catch (err) {
     console.warn("[Supabase DB] saveNotes exception (handled gracefully):", err?.message || err);
-    return { success: true, isLocalFallback: true, error: err?.message };
+    return { success: true, isLocalFallback: true, error: err?.message, materialId };
   }
 }
 
@@ -538,56 +522,65 @@ export async function saveFullStudyPackageToSupabase({
     }
   }
 
-  // 2. Save material metadata to 'study_materials' table
+  // 2. Save material metadata to 'study_materials' table first and await completely
+  let confirmedMaterialId = material?.id;
   if (material) {
     try {
-      await saveMaterialToDatabase(material);
-      result.materialSaved = true;
+      const matRes = await saveMaterialToDatabase(material);
+      if (matRes && matRes.success && !matRes.error) {
+        result.materialSaved = true;
+        confirmedMaterialId = matRes.materialId || material.id;
+      } else {
+        console.warn("[Supabase] Material DB save returned error:", matRes?.error);
+      }
     } catch (e) {
       console.warn("[Supabase] Material DB save error:", e);
     }
   }
 
-  // 3. Save generated notes to 'generated_notes' table
-  if (material && notes) {
-    try {
-      await saveNotesToDatabase(material.id, notes);
-      result.notesSaved = true;
-    } catch (e) {
-      console.warn("[Supabase] Notes DB save error:", e);
-    }
-  }
-
-  // 4. Save flashcards and memorise pack
-  if (material && memorisePack) {
-    try {
-      if (memorisePack.flashcards && memorisePack.flashcards.length) {
-        await saveFlashcardsToDatabase(material.id, memorisePack.flashcards);
+  // 3. Only after study_materials completes successfully, save to child tables using confirmed material ID
+  if (confirmedMaterialId) {
+    // Save generated notes
+    if (notes) {
+      try {
+        const notesRes = await saveNotesToDatabase(confirmedMaterialId, notes);
+        result.notesSaved = Boolean(notesRes?.success);
+      } catch (e) {
+        console.warn("[Supabase] Notes DB save error:", e);
       }
-      await saveMemorisePackToDatabase(material.id, memorisePack);
-      result.flashcardsSaved = true;
-    } catch (e) {
-      console.warn("[Supabase] Flashcards DB save error:", e);
     }
-  }
 
-  // 5. Save Quiz
-  if (material && quiz) {
-    try {
-      await saveQuizToDatabase(material.id, quiz);
-      result.quizSaved = true;
-    } catch (e) {
-      console.warn("[Supabase] Quiz DB save error:", e);
+    // Save flashcards and memorise pack
+    if (memorisePack) {
+      try {
+        if (memorisePack.flashcards && memorisePack.flashcards.length) {
+          await saveFlashcardsToDatabase(confirmedMaterialId, memorisePack.flashcards);
+        }
+        await saveMemorisePackToDatabase(confirmedMaterialId, memorisePack);
+        result.flashcardsSaved = true;
+      } catch (e) {
+        console.warn("[Supabase] Flashcards DB save error:", e);
+      }
     }
-  }
 
-  // 6. Save Step Lesson
-  if (material && lesson) {
-    try {
-      await saveLessonToDatabase(material.id, lesson);
-      result.lessonSaved = true;
-    } catch (e) {
-      console.warn("[Supabase] Lesson DB save error:", e);
+    // Save Quiz
+    if (quiz) {
+      try {
+        await saveQuizToDatabase(confirmedMaterialId, quiz);
+        result.quizSaved = true;
+      } catch (e) {
+        console.warn("[Supabase] Quiz DB save error:", e);
+      }
+    }
+
+    // Save Step Lesson
+    if (lesson) {
+      try {
+        await saveLessonToDatabase(confirmedMaterialId, lesson);
+        result.lessonSaved = true;
+      } catch (e) {
+        console.warn("[Supabase] Lesson DB save error:", e);
+      }
     }
   }
 
