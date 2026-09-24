@@ -20,7 +20,17 @@ import {
   SourceType,
 } from "../types";
 import { cleanTitle, sanitizeMaterial, isGarbledText, generateDiagnosticQuestions } from "../utils/studyTransformer";
-import { deleteMaterialFromDatabase } from "../supabase";
+import {
+  deleteMaterialFromDatabase,
+  isSupabaseConfigured,
+  fetchFullStudyDataFromSupabase,
+  saveMaterialToDatabase,
+  saveNotesToDatabase,
+  saveFlashcardsToDatabase,
+  saveQuizToDatabase,
+  saveLessonToDatabase,
+  saveMemorisePackToDatabase,
+} from "../supabase";
 import {
   initialUser,
   initialMaterials,
@@ -432,31 +442,79 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ========================================================
   const isServerLoaded = useRef(false);
 
-  // 1. Load persistent user data from the server on startup
+  // 1. Load persistent user data from Supabase & server on startup
   useEffect(() => {
     let isMounted = true;
-    async function loadServerStorage() {
+    async function loadPersistentStorage() {
       try {
+        // A. If Supabase is configured, fetch directly from Supabase Database tables
+        if (isSupabaseConfigured()) {
+          console.info("[Supabase DB] Fetching persistent study materials & data on load...");
+          try {
+            const sbRes = await fetchFullStudyDataFromSupabase();
+            if (isMounted && sbRes && sbRes.success && sbRes.data) {
+              const d = sbRes.data;
+              if (Array.isArray(d.materials) && d.materials.length > 0) {
+                const valid = d.materials
+                  .filter((m: any) => !isGhostOrLegacyMaterial(m))
+                  .map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
+                if (valid.length > 0) {
+                  setMaterials(valid);
+                  setActiveMaterial((prev) => prev || valid[0]);
+                }
+              }
+              if (d.notes && Object.keys(d.notes).length > 0) {
+                setNotes((prev) => ({ ...prev, ...d.notes }));
+              }
+              if (d.memorisePacks && Object.keys(d.memorisePacks).length > 0) {
+                setMemorisePacks((prev) => ({ ...prev, ...d.memorisePacks }));
+              }
+              if (d.quizzes && Object.keys(d.quizzes).length > 0) {
+                setQuizzes((prev) => ({ ...prev, ...d.quizzes }));
+              }
+              if (d.lessons && Object.keys(d.lessons).length > 0) {
+                setLessons((prev) => ({ ...prev, ...d.lessons }));
+              }
+              if (d.studyPlan) {
+                setStudyPlan(d.studyPlan);
+              }
+            }
+          } catch (sbErr) {
+            console.warn("[Supabase DB] Startup load notice:", sbErr);
+          }
+        }
+
+        // B. Also fetch from /api/storage/load (for hybrid / server storage sync)
         const userId = user?.id || "default_user";
         const res = await fetch(`/api/storage/load?userId=${encodeURIComponent(userId)}`);
-        const json = await res.json();
-        if (isMounted && json.success && json.data) {
+        const json = await res.json().catch(() => null);
+        if (isMounted && json?.success && json?.data) {
           const d = json.data;
-          if (Array.isArray(d.materials)) {
+          if (Array.isArray(d.materials) && d.materials.length > 0) {
             const valid = d.materials
               .filter((m: any) => !isGhostOrLegacyMaterial(m))
               .map((m: StudyMaterial) => sanitizeMaterial({ ...m, title: cleanTitle(m.title) }));
-            setMaterials(valid);
+            setMaterials((prev) => {
+              const existingIds = new Set(prev.map((m) => m.id));
+              const merged = [...prev];
+              valid.forEach((m) => {
+                if (!existingIds.has(m.id)) {
+                  merged.push(m);
+                  existingIds.add(m.id);
+                }
+              });
+              return merged;
+            });
           }
-          if (d.notes) setNotes(d.notes);
-          if (d.memorisePacks) setMemorisePacks(d.memorisePacks);
-          if (d.quizzes) setQuizzes(d.quizzes);
-          if (d.lessons) setLessons(d.lessons);
+          if (d.notes) setNotes((prev) => ({ ...prev, ...d.notes }));
+          if (d.memorisePacks) setMemorisePacks((prev) => ({ ...prev, ...d.memorisePacks }));
+          if (d.quizzes) setQuizzes((prev) => ({ ...prev, ...d.quizzes }));
+          if (d.lessons) setLessons((prev) => ({ ...prev, ...d.lessons }));
           if (Array.isArray(d.studyGroups) && d.studyGroups.length > 0) setStudyGroups(d.studyGroups);
           if (d.groupMessages && Object.keys(d.groupMessages).length > 0) setGroupMessages((prev) => ({ ...prev, ...d.groupMessages }));
           if (Array.isArray(d.friends) && d.friends.length > 0) setFriends(d.friends);
-          if (d.studyPlan) setStudyPlan(d.studyPlan);
-          if (d.progress) setProgress(d.progress);
+          if (d.studyPlan) setStudyPlan((prev) => prev || d.studyPlan);
+          if (d.progress) setProgress((prev) => prev || d.progress);
           if (Array.isArray(d.achievements) && d.achievements.length > 0) setAchievements(d.achievements);
           if (d.user) {
             setUser((prev) => ({
@@ -469,14 +527,14 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         }
       } catch (err) {
-        console.warn("Could not load persistent data from server:", err);
+        console.warn("Could not load persistent data from storage:", err);
       } finally {
         if (isMounted) {
           isServerLoaded.current = true;
         }
       }
     }
-    loadServerStorage();
+    loadPersistentStorage();
     return () => {
       isMounted = false;
     };
@@ -721,6 +779,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isBookmarked: false,
     };
     setNotes((prev) => ({ ...prev, [materialId]: newNotes }));
+    if (isSupabaseConfigured()) {
+      saveNotesToDatabase(materialId, newNotes).catch((err) =>
+        console.warn("[Supabase DB] background saveNotes notice:", err)
+      );
+    }
   };
 
   const reviewFlashcard = (materialId: string, cardId: string, rating: RepetitionRating) => {
@@ -740,9 +803,16 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return card;
       });
 
+      const updatedPack = { ...pack, flashcards: updatedCards };
+      if (isSupabaseConfigured()) {
+        saveMemorisePackToDatabase(materialId, updatedPack).catch((err) =>
+          console.warn("[Supabase DB] background saveFlashcards notice:", err)
+        );
+      }
+
       return {
         ...prev,
-        [materialId]: { ...pack, flashcards: updatedCards },
+        [materialId]: updatedPack,
       };
     });
 
@@ -764,6 +834,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       recallQuestions: data.recallQuestions || [],
     };
     setMemorisePacks((prev) => ({ ...prev, [materialId]: pack }));
+    if (isSupabaseConfigured()) {
+      saveMemorisePackToDatabase(materialId, pack).catch((err) =>
+        console.warn("[Supabase DB] background saveMemorisePack notice:", err)
+      );
+    }
   };
 
   const submitQuizAttempt = (
@@ -777,13 +852,19 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setQuizzes((prev) => {
       const existing = prev[materialId];
       if (!existing) return prev;
+      const updatedQuiz = {
+        ...existing,
+        bestScore: Math.max(existing.bestScore || 0, pct),
+        attemptsCount: existing.attemptsCount + 1,
+      };
+      if (isSupabaseConfigured()) {
+        saveQuizToDatabase(materialId, updatedQuiz).catch((err) =>
+          console.warn("[Supabase DB] background saveQuiz notice:", err)
+        );
+      }
       return {
         ...prev,
-        [materialId]: {
-          ...existing,
-          bestScore: Math.max(existing.bestScore || 0, pct),
-          attemptsCount: existing.attemptsCount + 1,
-        },
+        [materialId]: updatedQuiz,
       };
     });
 
@@ -818,6 +899,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       attemptsCount: 0,
     };
     setQuizzes((prev) => ({ ...prev, [materialId]: quiz }));
+    if (isSupabaseConfigured()) {
+      saveQuizToDatabase(materialId, quiz).catch((err) =>
+        console.warn("[Supabase DB] background saveQuiz notice:", err)
+      );
+    }
   };
 
   const studyWeakAreasQuiz = (materialId: string, wrongQuestionIds: string[]) => {
@@ -833,14 +919,20 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         idx === stepIndex ? { ...s, completed: true } : s
       );
       const isFin = stepIndex >= existing.lessons.length - 1;
+      const updatedLesson = {
+        ...existing,
+        currentStepIndex: Math.min(stepIndex + 1, existing.lessons.length - 1),
+        lessons: updatedSteps,
+        isFinished: isFin,
+      };
+      if (isSupabaseConfigured()) {
+        saveLessonToDatabase(materialId, updatedLesson).catch((err) =>
+          console.warn("[Supabase DB] background saveLesson notice:", err)
+        );
+      }
       return {
         ...prev,
-        [materialId]: {
-          ...existing,
-          currentStepIndex: Math.min(stepIndex + 1, existing.lessons.length - 1),
-          lessons: updatedSteps,
-          isFinished: isFin,
-        },
+        [materialId]: updatedLesson,
       };
     });
 
@@ -865,6 +957,11 @@ export const StudyProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isFinished: false,
     };
     setLessons((prev) => ({ ...prev, [materialId]: lesson }));
+    if (isSupabaseConfigured()) {
+      saveLessonToDatabase(materialId, lesson).catch((err) =>
+        console.warn("[Supabase DB] background saveLesson notice:", err)
+      );
+    }
   };
 
   const createStudyGroup = (groupData: Partial<StudyGroup>) => {

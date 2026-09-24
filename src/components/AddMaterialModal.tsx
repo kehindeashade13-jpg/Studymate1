@@ -38,6 +38,9 @@ import {
   saveMaterialToDatabase,
   saveNotesToDatabase,
   saveFlashcardsToDatabase,
+  saveQuizToDatabase,
+  saveLessonToDatabase,
+  saveMemorisePackToDatabase,
   isSupabaseConfigured,
 } from "../supabase";
 
@@ -572,13 +575,16 @@ export const AddMaterialModal: React.FC = () => {
     } catch (err) {
       console.warn("Using local study transformation fallback:", err);
     } finally {
-      // 4. Database Insertion: Await inserting records into study_materials, generated_notes, flashcards BEFORE navigating
+      // 4. Database Insertion: Await inserting records into study_materials, generated_notes, flashcards, quizzes, lessons BEFORE navigating
       console.log(`[Supabase DB] Awaiting persistence for material "${finalTitle}"...`);
       try {
-        const [dbMatRes, dbNotesRes, dbFlashRes] = await Promise.all([
+        const [dbMatRes, dbNotesRes, dbFlashRes, dbQuizRes, dbLessonRes, dbPackRes] = await Promise.all([
           saveMaterialToDatabase(resolvedMaterial),
           saveNotesToDatabase(newMaterialId, resolvedNotes),
           saveFlashcardsToDatabase(newMaterialId, resolvedFlashcards.flashcards),
+          saveQuizToDatabase(newMaterialId, resolvedQuiz),
+          saveLessonToDatabase(newMaterialId, resolvedLesson),
+          saveMemorisePackToDatabase(newMaterialId, resolvedFlashcards),
         ]);
 
         if (isSupabaseConfigured()) {
@@ -587,6 +593,9 @@ export const AddMaterialModal: React.FC = () => {
           }
           if (dbNotesRes && !dbNotesRes.success && dbNotesRes.error) {
             console.warn("[Supabase DB Notice] Notes table insertion error:", dbNotesRes.error);
+          }
+          if (dbQuizRes && !dbQuizRes.success && dbQuizRes.error) {
+            console.warn("[Supabase DB Notice] Quiz table insertion error:", dbQuizRes.error);
           }
         }
       } catch (dbErr: any) {
